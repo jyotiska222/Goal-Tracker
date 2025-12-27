@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
 
-// Mock API calls (replace with actual Flask API calls)
-const API_BASE = 'http://127.0.0.1:5000/api';
+// API Base URL - automatically uses production or local backend
+const API_BASE = process.env.NODE_ENV === 'production' 
+  ? 'https://goal-tracker-backend.onrender.com/api'
+  : 'http://127.0.0.1:5000/api';
 
 const GoalTrackerApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
