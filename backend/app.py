@@ -1,9 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import json
-import os
+from flask_pymongo import PyMongo
+from pymongo.errors import OperationFailure
+from bson.objectid import ObjectId
 from datetime import datetime
 import hashlib
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -12,43 +17,34 @@ import logging
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
+# MongoDB Configuration
+# Note: Update the MONGO_URI based on your actual MongoDB Atlas connection string
+MONGO_URI = os.getenv('MONGO_URI', 'mongodb+srv://goaltracker_dev:25930374Jj@cluster0.hz9nmde.mongodb.net/goaltracker?retryWrites=true&w=majority&appName=Cluster0')
+app.config['MONGO_URI'] = MONGO_URI
+
+try:
+    mongo = PyMongo(app)
+except Exception as e:
+    print(f"MongoDB Connection Warning: {e}")
+    print(f"Using MONGO_URI: {MONGO_URI}")
+    mongo = PyMongo(app)
+
 CORS(app, 
      origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", "http://localhost:5174", "http://127.0.0.1:5000", "http://192.168.31.175:5000", "https://goal-tracker-liart.vercel.app", "https://goal-tracker.vercel.app", "https://goal-tracker-pearl.vercel.app"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type"],
      supports_credentials=True)
 
-DATA_DIR = 'data'
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
-# Initialize JSON files if they don't exist
-def init_json_files():
-    files = ['users.json', 'tags.json', 'monthly_goals.json', 'weekly_goals.json', 'daily_goals.json', 'habits.json']
-    for file in files:
-        filepath = os.path.join(DATA_DIR, file)
-        if not os.path.exists(filepath):
-            with open(filepath, 'w') as f:
-                json.dump([], f)
-
-init_json_files()
-
-# Helper functions to read/write JSON
-def read_json(filename):
-    filepath = os.path.join(DATA_DIR, filename)
-    try:
-        with open(filepath, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-def write_json(filename, data):
-    filepath = os.path.join(DATA_DIR, filename)
-    with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
-
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+def serialize_doc(doc):
+    """Convert MongoDB document to JSON-serializable format"""
+    if doc is None:
+        return None
+    if '_id' in doc and isinstance(doc['_id'], ObjectId):
+        doc['_id'] = str(doc['_id'])
+    return doc
 
 # ============== HEALTH CHECK ENDPOINTS ==============
 @app.route('/health', methods=['GET'])
@@ -65,8 +61,8 @@ def api_health():
 def database_check():
     """Check if database is working properly"""
     try:
-        # Try to read from users file to verify database connectivity
-        users = read_json('users.json')
+        # Try to access MongoDB
+        mongo.db.users.find_one()
         return jsonify({
             'status': 'ok',
             'message': 'Database is working',
@@ -90,15 +86,17 @@ def login():
         if not username or not password:
             return jsonify({'success': False, 'message': 'Username and password required'}), 400
         
-        users = read_json('users.json')
         hashed_password = hash_password(password)
-        user = next((u for u in users if u['username'] == username and u['password'] == hashed_password), None)
+        user = mongo.db.users.find_one({
+            'username': username,
+            'password': hashed_password
+        })
         
         if user:
             return jsonify({
                 'success': True, 
                 'user': {
-                    'id': user['id'], 
+                    'id': str(user['_id']), 
                     'username': user['username']
                 }
             })
@@ -116,27 +114,23 @@ def signup():
         if not username or not password:
             return jsonify({'success': False, 'message': 'Username and password required'}), 400
         
-        users = read_json('users.json')
-        
-        if any(u['username'] == username for u in users):
+        if mongo.db.users.find_one({'username': username}):
             return jsonify({'success': False, 'message': 'Username already exists'}), 400
         
         new_user = {
-            'id': str(len(users) + 1),
             'username': username,
             'password': hash_password(password),
             'createdAt': datetime.now().isoformat()
         }
-        users.append(new_user)
-        write_json('users.json', users)
+        result = mongo.db.users.insert_one(new_user)
         
         return jsonify({
             'success': True, 
             'user': {
-                'id': new_user['id'], 
+                'id': str(result.inserted_id), 
                 'username': new_user['username']
             }
-        })
+        }), 201
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -144,9 +138,8 @@ def signup():
 @app.route('/api/tags/<user_id>', methods=['GET'])
 def get_tags(user_id):
     try:
-        tags = read_json('tags.json')
-        user_tags = [t for t in tags if t.get('userId') == user_id]
-        return jsonify(user_tags)
+        tags = list(mongo.db.tags.find({'userId': user_id}))
+        return jsonify([serialize_doc(tag) for tag in tags])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -154,18 +147,17 @@ def get_tags(user_id):
 def create_tag():
     try:
         data = request.json
-        tags = read_json('tags.json')
         
         new_tag = {
-            'id': str(len(tags) + 1),
             'name': data.get('name'),
             'color': data.get('color', '#3b82f6'),
             'userId': data.get('userId'),
             'createdAt': datetime.now().isoformat()
         }
-        tags.append(new_tag)
-        write_json('tags.json', tags)
-        return jsonify(new_tag), 201
+        result = mongo.db.tags.insert_one(new_tag)
+        new_tag['_id'] = result.inserted_id
+        
+        return jsonify(serialize_doc(new_tag)), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -173,17 +165,22 @@ def create_tag():
 def update_tag(tag_id):
     try:
         data = request.json
-        tags = read_json('tags.json')
-        tag_idx = next((i for i, t in enumerate(tags) if t['id'] == tag_id), None)
+        update_data = {
+            'name': data.get('name'),
+            'color': data.get('color'),
+            'updatedAt': datetime.now().isoformat()
+        }
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         
-        if tag_idx is not None:
-            tags[tag_idx].update({
-                'name': data.get('name', tags[tag_idx]['name']),
-                'color': data.get('color', tags[tag_idx]['color']),
-                'updatedAt': datetime.now().isoformat()
-            })
-            write_json('tags.json', tags)
-            return jsonify(tags[tag_idx])
+        result = mongo.db.tags.find_one_and_update(
+            {'_id': ObjectId(tag_id)},
+            {'$set': update_data},
+            return_document=True
+        )
+        
+        if result:
+            return jsonify(serialize_doc(result))
         return jsonify({'error': 'Tag not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -191,9 +188,7 @@ def update_tag(tag_id):
 @app.route('/api/tags/<tag_id>', methods=['DELETE'])
 def delete_tag(tag_id):
     try:
-        tags = read_json('tags.json')
-        tags = [t for t in tags if t['id'] != tag_id]
-        write_json('tags.json', tags)
+        mongo.db.tags.delete_one({'_id': ObjectId(tag_id)})
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -202,9 +197,8 @@ def delete_tag(tag_id):
 @app.route('/api/goals/monthly/<user_id>', methods=['GET'])
 def get_monthly_goals(user_id):
     try:
-        goals = read_json('monthly_goals.json')
-        user_goals = [g for g in goals if g.get('userId') == user_id]
-        return jsonify(user_goals)
+        goals = list(mongo.db.monthly_goals.find({'userId': user_id}))
+        return jsonify([serialize_doc(goal) for goal in goals])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -212,10 +206,8 @@ def get_monthly_goals(user_id):
 def create_monthly_goal():
     try:
         data = request.json
-        goals = read_json('monthly_goals.json')
         
         new_goal = {
-            'id': str(len(goals) + 1),
             'title': data.get('title'),
             'tagId': data.get('tagId'),
             'month': data.get('month'),
@@ -224,9 +216,10 @@ def create_monthly_goal():
             'completed': False,
             'createdAt': datetime.now().isoformat()
         }
-        goals.append(new_goal)
-        write_json('monthly_goals.json', goals)
-        return jsonify(new_goal), 201
+        result = mongo.db.monthly_goals.insert_one(new_goal)
+        new_goal['_id'] = result.inserted_id
+        
+        return jsonify(serialize_doc(new_goal)), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -234,20 +227,25 @@ def create_monthly_goal():
 def update_monthly_goal(goal_id):
     try:
         data = request.json
-        goals = read_json('monthly_goals.json')
-        goal_idx = next((i for i, g in enumerate(goals) if g['id'] == goal_id), None)
+        update_data = {
+            'title': data.get('title'),
+            'tagId': data.get('tagId'),
+            'month': data.get('month'),
+            'year': data.get('year'),
+            'completed': data.get('completed'),
+            'updatedAt': datetime.now().isoformat()
+        }
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         
-        if goal_idx is not None:
-            goals[goal_idx].update({
-                'title': data.get('title', goals[goal_idx]['title']),
-                'tagId': data.get('tagId', goals[goal_idx]['tagId']),
-                'month': data.get('month', goals[goal_idx]['month']),
-                'year': data.get('year', goals[goal_idx]['year']),
-                'completed': data.get('completed', goals[goal_idx]['completed']),
-                'updatedAt': datetime.now().isoformat()
-            })
-            write_json('monthly_goals.json', goals)
-            return jsonify(goals[goal_idx])
+        result = mongo.db.monthly_goals.find_one_and_update(
+            {'_id': ObjectId(goal_id)},
+            {'$set': update_data},
+            return_document=True
+        )
+        
+        if result:
+            return jsonify(serialize_doc(result))
         return jsonify({'error': 'Goal not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -255,9 +253,7 @@ def update_monthly_goal(goal_id):
 @app.route('/api/goals/monthly/<goal_id>', methods=['DELETE'])
 def delete_monthly_goal(goal_id):
     try:
-        goals = read_json('monthly_goals.json')
-        goals = [g for g in goals if g['id'] != goal_id]
-        write_json('monthly_goals.json', goals)
+        mongo.db.monthly_goals.delete_one({'_id': ObjectId(goal_id)})
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -266,9 +262,8 @@ def delete_monthly_goal(goal_id):
 @app.route('/api/goals/weekly/<user_id>', methods=['GET'])
 def get_weekly_goals(user_id):
     try:
-        goals = read_json('weekly_goals.json')
-        user_goals = [g for g in goals if g.get('userId') == user_id]
-        return jsonify(user_goals)
+        goals = list(mongo.db.weekly_goals.find({'userId': user_id}))
+        return jsonify([serialize_doc(goal) for goal in goals])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -276,10 +271,8 @@ def get_weekly_goals(user_id):
 def create_weekly_goal():
     try:
         data = request.json
-        goals = read_json('weekly_goals.json')
         
         new_goal = {
-            'id': str(len(goals) + 1),
             'title': data.get('title'),
             'tagId': data.get('tagId'),
             'parentId': data.get('parentId', ''),
@@ -294,14 +287,14 @@ def create_weekly_goal():
         
         # Inherit tag from parent if no tag specified and parent exists
         if not new_goal['tagId'] and new_goal['parentId']:
-            monthly_goals = read_json('monthly_goals.json')
-            parent = next((g for g in monthly_goals if g['id'] == new_goal['parentId']), None)
+            parent = mongo.db.monthly_goals.find_one({'_id': ObjectId(new_goal['parentId'])})
             if parent:
-                new_goal['tagId'] = parent['tagId']
+                new_goal['tagId'] = parent.get('tagId')
         
-        goals.append(new_goal)
-        write_json('weekly_goals.json', goals)
-        return jsonify(new_goal), 201
+        result = mongo.db.weekly_goals.insert_one(new_goal)
+        new_goal['_id'] = result.inserted_id
+        
+        return jsonify(serialize_doc(new_goal)), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -309,23 +302,28 @@ def create_weekly_goal():
 def update_weekly_goal(goal_id):
     try:
         data = request.json
-        goals = read_json('weekly_goals.json')
-        goal_idx = next((i for i, g in enumerate(goals) if g['id'] == goal_id), None)
+        update_data = {
+            'title': data.get('title'),
+            'tagId': data.get('tagId'),
+            'parentId': data.get('parentId'),
+            'weekStart': data.get('weekStart'),
+            'weekEnd': data.get('weekEnd'),
+            'weekNumber': data.get('weekNumber'),
+            'year': data.get('year'),
+            'completed': data.get('completed'),
+            'updatedAt': datetime.now().isoformat()
+        }
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         
-        if goal_idx is not None:
-            goals[goal_idx].update({
-                'title': data.get('title', goals[goal_idx]['title']),
-                'tagId': data.get('tagId', goals[goal_idx]['tagId']),
-                'parentId': data.get('parentId', goals[goal_idx].get('parentId', '')),
-                'weekStart': data.get('weekStart', goals[goal_idx]['weekStart']),
-                'weekEnd': data.get('weekEnd', goals[goal_idx]['weekEnd']),
-                'weekNumber': data.get('weekNumber', goals[goal_idx].get('weekNumber')),
-                'year': data.get('year', goals[goal_idx].get('year')),
-                'completed': data.get('completed', goals[goal_idx]['completed']),
-                'updatedAt': datetime.now().isoformat()
-            })
-            write_json('weekly_goals.json', goals)
-            return jsonify(goals[goal_idx])
+        result = mongo.db.weekly_goals.find_one_and_update(
+            {'_id': ObjectId(goal_id)},
+            {'$set': update_data},
+            return_document=True
+        )
+        
+        if result:
+            return jsonify(serialize_doc(result))
         return jsonify({'error': 'Goal not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -333,9 +331,7 @@ def update_weekly_goal(goal_id):
 @app.route('/api/goals/weekly/<goal_id>', methods=['DELETE'])
 def delete_weekly_goal(goal_id):
     try:
-        goals = read_json('weekly_goals.json')
-        goals = [g for g in goals if g['id'] != goal_id]
-        write_json('weekly_goals.json', goals)
+        mongo.db.weekly_goals.delete_one({'_id': ObjectId(goal_id)})
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -344,9 +340,8 @@ def delete_weekly_goal(goal_id):
 @app.route('/api/goals/daily/<user_id>', methods=['GET'])
 def get_daily_goals(user_id):
     try:
-        goals = read_json('daily_goals.json')
-        user_goals = [g for g in goals if g.get('userId') == user_id]
-        return jsonify(user_goals)
+        goals = list(mongo.db.daily_goals.find({'userId': user_id}))
+        return jsonify([serialize_doc(goal) for goal in goals])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -354,10 +349,8 @@ def get_daily_goals(user_id):
 def create_daily_goal():
     try:
         data = request.json
-        goals = read_json('daily_goals.json')
         
         new_goal = {
-            'id': str(len(goals) + 1),
             'title': data.get('title'),
             'tagId': data.get('tagId'),
             'parentId': data.get('parentId', ''),
@@ -369,14 +362,14 @@ def create_daily_goal():
         
         # Inherit tag from parent if no tag specified and parent exists
         if not new_goal['tagId'] and new_goal['parentId']:
-            weekly_goals = read_json('weekly_goals.json')
-            parent = next((g for g in weekly_goals if g['id'] == new_goal['parentId']), None)
+            parent = mongo.db.weekly_goals.find_one({'_id': ObjectId(new_goal['parentId'])})
             if parent:
-                new_goal['tagId'] = parent['tagId']
+                new_goal['tagId'] = parent.get('tagId')
         
-        goals.append(new_goal)
-        write_json('daily_goals.json', goals)
-        return jsonify(new_goal), 201
+        result = mongo.db.daily_goals.insert_one(new_goal)
+        new_goal['_id'] = result.inserted_id
+        
+        return jsonify(serialize_doc(new_goal)), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -384,20 +377,25 @@ def create_daily_goal():
 def update_daily_goal(goal_id):
     try:
         data = request.json
-        goals = read_json('daily_goals.json')
-        goal_idx = next((i for i, g in enumerate(goals) if g['id'] == goal_id), None)
+        update_data = {
+            'title': data.get('title'),
+            'tagId': data.get('tagId'),
+            'parentId': data.get('parentId'),
+            'date': data.get('date'),
+            'completed': data.get('completed'),
+            'updatedAt': datetime.now().isoformat()
+        }
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         
-        if goal_idx is not None:
-            goals[goal_idx].update({
-                'title': data.get('title', goals[goal_idx]['title']),
-                'tagId': data.get('tagId', goals[goal_idx]['tagId']),
-                'parentId': data.get('parentId', goals[goal_idx].get('parentId', '')),
-                'date': data.get('date', goals[goal_idx]['date']),
-                'completed': data.get('completed', goals[goal_idx]['completed']),
-                'updatedAt': datetime.now().isoformat()
-            })
-            write_json('daily_goals.json', goals)
-            return jsonify(goals[goal_idx])
+        result = mongo.db.daily_goals.find_one_and_update(
+            {'_id': ObjectId(goal_id)},
+            {'$set': update_data},
+            return_document=True
+        )
+        
+        if result:
+            return jsonify(serialize_doc(result))
         return jsonify({'error': 'Goal not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -405,9 +403,7 @@ def update_daily_goal(goal_id):
 @app.route('/api/goals/daily/<goal_id>', methods=['DELETE'])
 def delete_daily_goal(goal_id):
     try:
-        goals = read_json('daily_goals.json')
-        goals = [g for g in goals if g['id'] != goal_id]
-        write_json('daily_goals.json', goals)
+        mongo.db.daily_goals.delete_one({'_id': ObjectId(goal_id)})
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -416,9 +412,8 @@ def delete_daily_goal(goal_id):
 @app.route('/api/habits/<user_id>', methods=['GET'])
 def get_habits(user_id):
     try:
-        habits = read_json('habits.json')
-        user_habits = [h for h in habits if h.get('userId') == user_id]
-        return jsonify(user_habits)
+        habits = list(mongo.db.habits.find({'userId': user_id}))
+        return jsonify([serialize_doc(habit) for habit in habits])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -426,10 +421,8 @@ def get_habits(user_id):
 def create_habit():
     try:
         data = request.json
-        habits = read_json('habits.json')
         
         new_habit = {
-            'id': str(len(habits) + 1),
             'name': data.get('name'),
             'tagId': data.get('tagId'),
             'userId': data.get('userId'),
@@ -437,9 +430,10 @@ def create_habit():
             'startDate': datetime.now().strftime('%Y-%m-%d'),
             'createdAt': datetime.now().isoformat()
         }
-        habits.append(new_habit)
-        write_json('habits.json', habits)
-        return jsonify(new_habit), 201
+        result = mongo.db.habits.insert_one(new_habit)
+        new_habit['_id'] = result.inserted_id
+        
+        return jsonify(serialize_doc(new_habit)), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -447,18 +441,23 @@ def create_habit():
 def update_habit(habit_id):
     try:
         data = request.json
-        habits = read_json('habits.json')
-        habit_idx = next((i for i, h in enumerate(habits) if h['id'] == habit_id), None)
+        update_data = {
+            'name': data.get('name'),
+            'tagId': data.get('tagId'),
+            'completedDates': data.get('completedDates'),
+            'updatedAt': datetime.now().isoformat()
+        }
+        # Remove None values
+        update_data = {k: v for k, v in update_data.items() if v is not None}
         
-        if habit_idx is not None:
-            habits[habit_idx].update({
-                'name': data.get('name', habits[habit_idx]['name']),
-                'tagId': data.get('tagId', habits[habit_idx]['tagId']),
-                'completedDates': data.get('completedDates', habits[habit_idx]['completedDates']),
-                'updatedAt': datetime.now().isoformat()
-            })
-            write_json('habits.json', habits)
-            return jsonify(habits[habit_idx])
+        result = mongo.db.habits.find_one_and_update(
+            {'_id': ObjectId(habit_id)},
+            {'$set': update_data},
+            return_document=True
+        )
+        
+        if result:
+            return jsonify(serialize_doc(result))
         return jsonify({'error': 'Habit not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -466,36 +465,40 @@ def update_habit(habit_id):
 @app.route('/api/habits/<habit_id>/toggle/<date>', methods=['POST'])
 def toggle_habit(habit_id, date):
     try:
-        habits = read_json('habits.json')
-        habit_idx = next((i for i, h in enumerate(habits) if h['id'] == habit_id), None)
+        # Only allow toggling for today
+        today = datetime.now().strftime('%Y-%m-%d')
+        if date != today:
+            return jsonify({'error': 'Can only toggle habit for today'}), 400
         
-        if habit_idx is not None:
-            completed_dates = habits[habit_idx].get('completedDates', [])
-            
-            # Only allow toggling for today
-            today = datetime.now().strftime('%Y-%m-%d')
-            if date != today:
-                return jsonify({'error': 'Can only toggle habit for today'}), 400
-            
-            if date in completed_dates:
-                completed_dates.remove(date)
-            else:
-                completed_dates.append(date)
-            
-            habits[habit_idx]['completedDates'] = completed_dates
-            habits[habit_idx]['updatedAt'] = datetime.now().isoformat()
-            write_json('habits.json', habits)
-            return jsonify(habits[habit_idx])
-        return jsonify({'error': 'Habit not found'}), 404
+        habit = mongo.db.habits.find_one({'_id': ObjectId(habit_id)})
+        
+        if not habit:
+            return jsonify({'error': 'Habit not found'}), 404
+        
+        completed_dates = habit.get('completedDates', [])
+        
+        if date in completed_dates:
+            completed_dates.remove(date)
+        else:
+            completed_dates.append(date)
+        
+        result = mongo.db.habits.find_one_and_update(
+            {'_id': ObjectId(habit_id)},
+            {'$set': {
+                'completedDates': completed_dates,
+                'updatedAt': datetime.now().isoformat()
+            }},
+            return_document=True
+        )
+        
+        return jsonify(serialize_doc(result))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/habits/<habit_id>', methods=['DELETE'])
 def delete_habit(habit_id):
     try:
-        habits = read_json('habits.json')
-        habits = [h for h in habits if h['id'] != habit_id]
-        write_json('habits.json', habits)
+        mongo.db.habits.delete_one({'_id': ObjectId(habit_id)})
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -504,8 +507,7 @@ def delete_habit(habit_id):
 @app.route('/api/habits/<habit_id>/stats', methods=['GET'])
 def get_habit_stats(habit_id):
     try:
-        habits = read_json('habits.json')
-        habit = next((h for h in habits if h['id'] == habit_id), None)
+        habit = mongo.db.habits.find_one({'_id': ObjectId(habit_id)})
         
         if not habit:
             return jsonify({'error': 'Habit not found'}), 404
