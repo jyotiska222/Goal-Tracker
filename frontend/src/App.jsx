@@ -170,7 +170,7 @@ const GoalTrackerApp = () => {
     const handleActivity = () => {
       clearInterval(interval);
       checkSystemHealth();
-      interval = setInterval(checkSystemHealth, 10000);
+      interval = setInterval(checkSystemHealth, 30000);
     };
     const events = ['mousedown', 'keydown', 'touchstart'];
     events.forEach(e => document.addEventListener(e, handleActivity));
@@ -261,8 +261,14 @@ const GoalTrackerApp = () => {
   const handleDeleteTag = async (tagId) => {
     try {
       const response = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE' });
-      if (response.ok) await loadData();
+      if (response.ok) {
+        await loadData();
+      } else {
+        const error = await response.json();
+        alert(`Error deleting tag: ${error.error || 'Unknown error'}`);
+      }
     } catch (error) {
+      console.error('Error deleting tag:', error);
       alert('Error deleting tag');
     }
   };
@@ -324,8 +330,14 @@ const GoalTrackerApp = () => {
     try {
       const endpoints = { monthly: `/goals/monthly/${goalId}`, weekly: `/goals/weekly/${goalId}`, daily: `/goals/daily/${goalId}` };
       const response = await fetch(`${API_BASE}${endpoints[type]}`, { method: 'DELETE' });
-      if (response.ok) await loadData();
+      if (response.ok) {
+        await loadData();
+      } else {
+        const error = await response.json();
+        alert(`Error deleting goal: ${error.error || 'Unknown error'}`);
+      }
     } catch (error) {
+      console.error('Error deleting goal:', error);
       alert('Error deleting goal');
     }
   };
@@ -338,8 +350,14 @@ const GoalTrackerApp = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ completed: !currentCompleted })
       });
-      if (response.ok) await loadData();
+      if (response.ok) {
+        await loadData();
+      } else {
+        const error = await response.json();
+        alert(`Error updating goal: ${error.error || 'Unknown error'}`);
+      }
     } catch (error) {
+      console.error('Error updating goal:', error);
       alert('Error updating goal');
     }
   };
@@ -373,8 +391,14 @@ const GoalTrackerApp = () => {
     try {
       const today = new Date().toISOString().split('T')[0];
       const response = await fetch(`${API_BASE}/habits/${habitId}/toggle/${today}`, { method: 'POST' });
-      if (response.ok) await loadData();
+      if (response.ok) {
+        await loadData();
+      } else {
+        const error = await response.json();
+        alert(`Error toggling habit: ${error.error || 'Unknown error'}`);
+      }
     } catch (error) {
+      console.error('Error toggling habit:', error);
       alert('Error toggling habit');
     }
   };
@@ -382,8 +406,14 @@ const GoalTrackerApp = () => {
   const handleDeleteHabit = async (habitId) => {
     try {
       const response = await fetch(`${API_BASE}/habits/${habitId}`, { method: 'DELETE' });
-      if (response.ok) await loadData();
+      if (response.ok) {
+        await loadData();
+      } else {
+        const error = await response.json();
+        alert(`Error deleting habit: ${error.error || 'Unknown error'}`);
+      }
     } catch (error) {
+      console.error('Error deleting habit:', error);
       alert('Error deleting habit');
     }
   };
