@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown } from 'lucide-react';
 
-// Mock API calls (replace with actual Flask API calls)
-const API_BASE = 'http://127.0.0.1:5000/api';
+// API endpoint - uses environment variable if available, falls back to localhost for development
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:5000/api';
 
 const GoalTrackerApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
