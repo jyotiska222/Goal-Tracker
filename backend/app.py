@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
+from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure, ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
 from datetime import datetime
@@ -30,19 +30,54 @@ MONGO_URI = os.getenv('MONGO_URI', 'mongodb+srv://goaltracker_dev:25930374Jj@clu
 try:
     mongo_client = MongoClient(
         MONGO_URI,
-        maxPoolSize=50,  # Increased connection pool
+        maxPoolSize=50,
         minPoolSize=10,
         maxIdleTimeMS=45000,
-        serverSelectionTimeoutMS=5000,  # 5 second timeout
-        connectTimeoutMS=10000,
-        socketTimeoutMS=10000,
+        serverSelectionTimeoutMS=3000,  # Reduced to 3 seconds
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
         retryWrites=True,
-        w='majority'
+        w='majority',
+        readPreference='secondaryPreferred'  # Use secondary for reads when available
     )
     # Test the connection
     mongo_client.admin.command('ping')
     db = mongo_client.goaltracker
-    logger.info("✅ MongoDB connected successfully with optimized settings")
+    logger.info("✅ MongoDB connected successfully")
+    
+    # Create indexes for better query performance
+    logger.info("🔧 Creating database indexes...")
+    
+    # User index
+    db.users.create_index([('username', ASCENDING)], unique=True, background=True)
+    
+    # Tags indexes
+    db.tags.create_index([('userId', ASCENDING)], background=True)
+    db.tags.create_index([('userId', ASCENDING), ('createdAt', DESCENDING)], background=True)
+    
+    # Monthly goals indexes
+    db.monthly_goals.create_index([('userId', ASCENDING)], background=True)
+    db.monthly_goals.create_index([('userId', ASCENDING), ('year', DESCENDING), ('month', DESCENDING)], background=True)
+    db.monthly_goals.create_index([('userId', ASCENDING), ('createdAt', DESCENDING)], background=True)
+    
+    # Weekly goals indexes
+    db.weekly_goals.create_index([('userId', ASCENDING)], background=True)
+    db.weekly_goals.create_index([('userId', ASCENDING), ('year', DESCENDING), ('weekNumber', DESCENDING)], background=True)
+    db.weekly_goals.create_index([('userId', ASCENDING), ('parentId', ASCENDING)], background=True)
+    db.weekly_goals.create_index([('userId', ASCENDING), ('createdAt', DESCENDING)], background=True)
+    
+    # Daily goals indexes
+    db.daily_goals.create_index([('userId', ASCENDING)], background=True)
+    db.daily_goals.create_index([('userId', ASCENDING), ('date', DESCENDING)], background=True)
+    db.daily_goals.create_index([('userId', ASCENDING), ('parentId', ASCENDING)], background=True)
+    db.daily_goals.create_index([('userId', ASCENDING), ('createdAt', DESCENDING)], background=True)
+    
+    # Habits indexes
+    db.habits.create_index([('userId', ASCENDING)], background=True)
+    db.habits.create_index([('userId', ASCENDING), ('createdAt', DESCENDING)], background=True)
+    
+    logger.info("✅ Database indexes created successfully")
+    
 except Exception as e:
     logger.error(f"❌ MongoDB Connection Error: {e}")
     db = None
@@ -82,10 +117,12 @@ def handle_db_errors(f):
             
             result = f(*args, **kwargs)
             
-            # Log slow queries (> 1 second)
+            # Log slow queries (> 500ms now, reduced threshold)
             elapsed = time.time() - start_time
-            if elapsed > 1:
+            if elapsed > 0.5:
                 logger.warning(f"⚠️ Slow query in {f.__name__}: {elapsed:.2f}s")
+            elif elapsed > 0.2:
+                logger.info(f"📊 Query {f.__name__}: {elapsed:.2f}s")
             
             return result
             
@@ -129,7 +166,16 @@ def database_check():
         ping_time = (time.time() - start) * 1000
         
         # Count documents in collections
-        users_count = db.users.count_documents({})
+        users_count = db.users.estimated_document_count()  # Faster than count_documents
+        
+        # Check indexes
+        indexes_info = {
+            'tags': len(list(db.tags.list_indexes())),
+            'monthly_goals': len(list(db.monthly_goals.list_indexes())),
+            'weekly_goals': len(list(db.weekly_goals.list_indexes())),
+            'daily_goals': len(list(db.daily_goals.list_indexes())),
+            'habits': len(list(db.habits.list_indexes()))
+        }
         
         return jsonify({
             'status': 'ok',
@@ -137,6 +183,7 @@ def database_check():
             'database_accessible': True,
             'ping_ms': round(ping_time, 2),
             'users_count': users_count,
+            'indexes': indexes_info,
             'connection_pool_size': 50
         }), 200
     except Exception as e:
@@ -164,7 +211,7 @@ def login():
     
     hashed_password = hash_password(password)
     
-    # Use projection to only fetch needed fields
+    # Use projection and index
     user = db.users.find_one(
         {'username': username, 'password': hashed_password},
         {'username': 1}
@@ -195,7 +242,7 @@ def signup():
     if not username or not password:
         return jsonify({'success': False, 'message': 'Username and password required'}), 400
     
-    # Check if username exists
+    # Check if username exists (uses index)
     if db.users.find_one({'username': username}, {'_id': 1}):
         return jsonify({'success': False, 'message': 'Username already exists'}), 400
     
@@ -219,7 +266,11 @@ def signup():
 @app.route('/api/tags/<user_id>', methods=['GET'])
 @handle_db_errors
 def get_tags(user_id):
-    tags = list(db.tags.find({'userId': user_id}).sort('createdAt', -1))
+    # Uses index: userId + createdAt
+    tags = list(db.tags.find(
+        {'userId': user_id}
+    ).sort('createdAt', DESCENDING).limit(1000))  # Add reasonable limit
+    
     return jsonify([serialize_doc(tag) for tag in tags]), 200
 
 @app.route('/api/tags', methods=['POST'])
@@ -288,7 +339,11 @@ def delete_tag(tag_id):
 @app.route('/api/goals/monthly/<user_id>', methods=['GET'])
 @handle_db_errors
 def get_monthly_goals(user_id):
-    goals = list(db.monthly_goals.find({'userId': user_id}).sort('createdAt', -1))
+    # Uses index: userId + createdAt
+    goals = list(db.monthly_goals.find(
+        {'userId': user_id}
+    ).sort('createdAt', DESCENDING).limit(1000))
+    
     return jsonify([serialize_doc(goal) for goal in goals]), 200
 
 @app.route('/api/goals/monthly', methods=['POST'])
@@ -362,7 +417,11 @@ def delete_monthly_goal(goal_id):
 @app.route('/api/goals/weekly/<user_id>', methods=['GET'])
 @handle_db_errors
 def get_weekly_goals(user_id):
-    goals = list(db.weekly_goals.find({'userId': user_id}).sort('createdAt', -1))
+    # Uses index: userId + createdAt
+    goals = list(db.weekly_goals.find(
+        {'userId': user_id}
+    ).sort('createdAt', DESCENDING).limit(1000))
+    
     return jsonify([serialize_doc(goal) for goal in goals]), 200
 
 @app.route('/api/goals/weekly', methods=['POST'])
@@ -448,7 +507,11 @@ def delete_weekly_goal(goal_id):
 @app.route('/api/goals/daily/<user_id>', methods=['GET'])
 @handle_db_errors
 def get_daily_goals(user_id):
-    goals = list(db.daily_goals.find({'userId': user_id}).sort('createdAt', -1))
+    # Uses index: userId + createdAt
+    goals = list(db.daily_goals.find(
+        {'userId': user_id}
+    ).sort('createdAt', DESCENDING).limit(1000))
+    
     return jsonify([serialize_doc(goal) for goal in goals]), 200
 
 @app.route('/api/goals/daily', methods=['POST'])
@@ -528,7 +591,11 @@ def delete_daily_goal(goal_id):
 @app.route('/api/habits/<user_id>', methods=['GET'])
 @handle_db_errors
 def get_habits(user_id):
-    habits = list(db.habits.find({'userId': user_id}).sort('createdAt', -1))
+    # Uses index: userId + createdAt
+    habits = list(db.habits.find(
+        {'userId': user_id}
+    ).sort('createdAt', DESCENDING).limit(1000))
+    
     return jsonify([serialize_doc(habit) for habit in habits]), 200
 
 @app.route('/api/habits', methods=['POST'])
@@ -588,10 +655,32 @@ def toggle_habit(habit_id, date):
     if not ObjectId.is_valid(habit_id):
         return jsonify({'error': 'Invalid habit ID', 'success': False}), 400
     
-    # Only allow toggling for today
+    # Normalize the date format (handle both YYYY-MM-DD and other formats)
+    try:
+        # Try to parse the date to ensure it's valid
+        parsed_date = datetime.strptime(date, '%Y-%m-%d')
+        normalized_date = parsed_date.strftime('%Y-%m-%d')
+    except ValueError:
+        # If parsing fails, try other common formats
+        try:
+            parsed_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+            normalized_date = parsed_date.strftime('%Y-%m-%d')
+        except:
+            return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD', 'success': False}), 400
+    
+    # Check if the date is today
     today = datetime.now().strftime('%Y-%m-%d')
-    if date != today:
-        return jsonify({'error': 'Can only toggle habit for today', 'success': False}), 400
+    
+    # Log for debugging
+    logger.info(f"Toggle habit: received date={date}, normalized={normalized_date}, today={today}")
+    
+    if normalized_date != today:
+        return jsonify({
+            'error': 'Can only toggle habit for today',
+            'success': False,
+            'received_date': normalized_date,
+            'today_date': today
+        }), 400
     
     habit = db.habits.find_one({'_id': ObjectId(habit_id)}, {'completedDates': 1})
     
@@ -600,10 +689,11 @@ def toggle_habit(habit_id, date):
     
     completed_dates = habit.get('completedDates', [])
     
-    if date in completed_dates:
-        completed_dates.remove(date)
+    # Use normalized date for consistency
+    if normalized_date in completed_dates:
+        completed_dates.remove(normalized_date)
     else:
-        completed_dates.append(date)
+        completed_dates.append(normalized_date)
     
     result = db.habits.find_one_and_update(
         {'_id': ObjectId(habit_id)},

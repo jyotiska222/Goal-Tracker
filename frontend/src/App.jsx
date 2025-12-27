@@ -387,21 +387,27 @@ const GoalTrackerApp = () => {
     }
   };
 
-  const handleToggleHabit = async (habitId) => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const response = await fetch(`${API_BASE}/habits/${habitId}/toggle/${today}`, { method: 'POST' });
-      if (response.ok) {
-        await loadData();
-      } else {
-        const error = await response.json();
-        alert(`Error toggling habit: ${error.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error toggling habit:', error);
-      alert('Error toggling habit');
+const handleToggleHabit = async (habitId, date) => {
+  try {
+    const response = await fetch(`${API_URL}/api/habits/${habitId}/toggle/${date}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to toggle habit');
     }
-  };
+    
+    const updatedHabit = await response.json();
+    
+    // Update the habit in state
+    setHabits(habits.map(h => h.id === habitId ? updatedHabit : h));
+  } catch (error) {
+    console.error('Error toggling habit:', error);
+    alert(error.message);
+  }
+};
 
   const handleDeleteHabit = async (habitId) => {
     try {
@@ -713,6 +719,7 @@ const GoalTrackerApp = () => {
           )}
         </div>
 
+
         {/* Habits */}
         <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 rounded-xl p-4 border border-blue-500/10">
           <div className="flex items-center justify-between mb-3">
@@ -722,10 +729,18 @@ const GoalTrackerApp = () => {
               </div>
               <h2 className="font-semibold">Habits</h2>
             </div>
-            <button onClick={() => { setShowHabitModal(true); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); }} className="p-2 hover:bg-gray-800/50 rounded-lg">
+            <button
+              onClick={() => {
+                setShowHabitModal(true);
+                setEditingHabit(null);
+                setHabitForm({ name: '', tagId: '' });
+              }}
+              className="p-2 hover:bg-gray-800/50 rounded-lg"
+            >
               <Plus className="w-4 h-4 text-blue-400" />
             </button>
           </div>
+
           {habits.length === 0 ? (
             <p className="text-sm text-gray-500">No habits yet</p>
           ) : (
@@ -737,33 +752,53 @@ const GoalTrackerApp = () => {
                   d.setDate(d.getDate() - (6 - i));
                   return d.toISOString().split('T')[0];
                 });
-                
+
                 return (
                   <div key={habit.id} className="space-y-2">
                     <div className="flex items-center gap-2">
                       <span className="flex-1 text-sm">{habit.name}</span>
-                      <button onClick={() => setShowHabitReport(habit)} className="p-1.5 hover:bg-gray-800/50 rounded-lg">
+                      <button
+                        onClick={() => setShowHabitReport(habit)}
+                        className="p-1.5 hover:bg-gray-800/50 rounded-lg"
+                      >
                         <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
                       </button>
-                      <button onClick={() => { setEditingHabit(habit); setHabitForm({ name: habit.name, tagId: habit.tagId }); setShowHabitModal(true); }} className="p-1.5 hover:bg-gray-800/50 rounded-lg">
+                      <button
+                        onClick={() => {
+                          setEditingHabit(habit);
+                          setHabitForm({ name: habit.name, tagId: habit.tagId });
+                          setShowHabitModal(true);
+                        }}
+                        className="p-1.5 hover:bg-gray-800/50 rounded-lg"
+                      >
                         <Edit2 className="w-3.5 h-3.5 text-blue-400" />
                       </button>
-                      <button onClick={() => handleDeleteHabit(habit.id)} className="p-1.5 hover:bg-gray-800/50 rounded-lg text-red-400">
+                      <button
+                        onClick={() => handleDeleteHabit(habit.id)}
+                        className="p-1.5 hover:bg-gray-800/50 rounded-lg text-red-400"
+                      >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    {/* Last 7 days tracker */}
                     <div className="flex gap-1">
                       {last7Days.map((date, idx) => {
                         const isDateCompleted = habit.completedDates.includes(date);
                         const isDateToday = date === today;
+
                         return (
                           <button
                             key={idx}
-                            onClick={() => isDateToday && handleToggleHabit(habit.id)}
+                            onClick={() => isDateToday && handleToggleHabit(habit.id, today)}
                             disabled={!isDateToday}
-                            className={`flex-1 h-8 rounded-lg transition-all ${
-                              isDateCompleted ? 'bg-gradient-to-br from-green-600 to-green-700' : isDateToday ? 'bg-gray-700/50 border border-gray-600' : 'bg-gray-800/50'
-                            } ${!isDateToday && 'cursor-default'}`}
+                            title={isDateToday ? 'Click to toggle today' : date}
+                            className={`flex-1 h-8 rounded-lg transition-all ${isDateCompleted
+                                ? 'bg-gradient-to-br from-green-600 to-green-700'
+                                : isDateToday
+                                  ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                                  : 'bg-gray-800/50'
+                              } ${isDateToday ? 'cursor-pointer' : 'cursor-default'}`}
                           >
                             {isDateCompleted && <Check className="w-4 h-4 mx-auto" />}
                           </button>
