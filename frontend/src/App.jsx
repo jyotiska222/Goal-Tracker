@@ -3,7 +3,7 @@ import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown, M
 
 // API Base URL - automatically uses production or local backend
 const API_BASE = process.env.NODE_ENV === 'production' 
-  ? 'https://goal-tracker-backend.onrender.com/api'
+  ? 'https://goal-tracker-tihi.onrender.com/api'
   : 'http://127.0.0.1:5000/api';
 
 const GoalTrackerApp = () => {
