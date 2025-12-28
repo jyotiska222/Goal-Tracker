@@ -26,6 +26,7 @@ const GoalTrackerApp = () => {
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [showHabitModal, setShowHabitModal] = useState(false);
   const [tagsExpanded, setTagsExpanded] = useState(false);
+  const [habitsExpanded, setHabitsExpanded] = useState(false);
   const [showHabitReport, setShowHabitReport] = useState(null);
   const [goalType, setGoalType] = useState('monthly');
   const [editingGoal, setEditingGoal] = useState(null);
@@ -773,93 +774,100 @@ const handleToggleHabit = async (habitId, date) => {
 
 
         {/* Habits */}
-        <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 rounded-xl p-4 border border-blue-500/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-green-600/20 rounded-lg">
-                <Check className="w-4 h-4 text-green-400" />
+        <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 rounded-xl border border-blue-500/10">
+          <div className="flex items-center justify-between p-4">
+            <button onClick={() => setHabitsExpanded(!habitsExpanded)} className="flex items-center gap-2 flex-1">
+              <ChevronDown className={`w-4 h-4 text-blue-400 transition-transform ${habitsExpanded ? 'rotate-0' : '-rotate-90'}`} />
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-green-600/20 rounded-lg">
+                  <Check className="w-4 h-4 text-green-400" />
+                </div>
+                <h2 className="font-semibold text-gray-100">Habits</h2>
               </div>
-              <h2 className="font-semibold">Habits</h2>
-            </div>
+            </button>
             <button
               onClick={() => {
                 setShowHabitModal(true);
                 setEditingHabit(null);
                 setHabitForm({ name: '', tagId: '' });
               }}
-              className="p-2 hover:bg-gray-800/50 rounded-lg"
+              className="p-2 hover:bg-blue-600/20 rounded-lg"
             >
               <Plus className="w-4 h-4 text-blue-400" />
             </button>
           </div>
 
-          {habits.length === 0 ? (
-            <p className="text-sm text-gray-500">No habits yet</p>
-          ) : (
-            <div className="space-y-3">
-              {habits.map(habit => {
-                const today = new Date().toISOString().split('T')[0];
-                const last7Days = Array.from({ length: 7 }, (_, i) => {
-                  const d = new Date();
-                  d.setDate(d.getDate() - (6 - i));
-                  return d.toISOString().split('T')[0];
-                });
+          {habitsExpanded && (
+            <div className="px-4 pb-4 border-t border-gray-800/50">
+              {habits.length === 0 ? (
+                <p className="text-sm text-gray-500 pt-3">No habits yet</p>
+              ) : (
+                <div className="space-y-3 pt-3">
+                  {habits.map(habit => {
+                    const today = new Date().toISOString().split('T')[0];
+                    const last7Days = Array.from({ length: 7 }, (_, i) => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - (6 - i));
+                      return d.toISOString().split('T')[0];
+                    });
 
-                return (
-                  <div key={habit.id} className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <span className="flex-1 text-sm">{habit.name}</span>
-                      <button
-                        onClick={() => setShowHabitReport(habit)}
-                        className="p-1.5 hover:bg-gray-800/50 rounded-lg"
-                      >
-                        <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setEditingHabit(habit);
-                          setHabitForm({ name: habit.name, tagId: habit.tagId });
-                          setShowHabitModal(true);
-                        }}
-                        className="p-1.5 hover:bg-gray-800/50 rounded-lg"
-                      >
-                        <Edit2 className="w-3.5 h-3.5 text-blue-400" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteHabit(habit.id)}
-                        className="p-1.5 hover:bg-gray-800/50 rounded-lg text-red-400"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {/* Last 7 days tracker */}
-                    <div className="flex gap-1">
-                      {last7Days.map((date, idx) => {
-                        const isDateCompleted = habit.completedDates.includes(date);
-                        const isDateToday = date === today;
-
-                        return (
+                    return (
+                      <div key={habit.id} className="space-y-2 pb-2 border-b border-gray-700/50 last:border-0">
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1 text-sm">{habit.name}</span>
                           <button
-                            key={idx}
-                            onClick={() => isDateToday && handleToggleHabit(habit.id, today)}
-                            disabled={!isDateToday}
-                            title={isDateToday ? 'Click to toggle today' : date}
-                            className={`flex-1 h-8 rounded-lg transition-all ${isDateCompleted
-                                ? 'bg-gradient-to-br from-green-600 to-green-700'
-                                : isDateToday
-                                  ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                                  : 'bg-gray-800/50'
-                              } ${isDateToday ? 'cursor-pointer' : 'cursor-default'}`}
+                            onClick={() => setShowHabitReport(habit)}
+                            className="p-1.5 hover:bg-purple-600/20 rounded-lg"
                           >
-                            {isDateCompleted && <Check className="w-4 h-4 mx-auto" />}
+                            <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
                           </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                          <button
+                            onClick={() => {
+                              setEditingHabit(habit);
+                              setHabitForm({ name: habit.name, tagId: habit.tagId });
+                              setShowHabitModal(true);
+                            }}
+                            className="p-1.5 hover:bg-blue-600/20 rounded-lg"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteHabit(habit.id)}
+                            className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Last 7 days tracker */}
+                        <div className="flex gap-1">
+                          {last7Days.map((date, idx) => {
+                            const isDateCompleted = habit.completedDates.includes(date);
+                            const isDateToday = date === today;
+
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => isDateToday && handleToggleHabit(habit.id, today)}
+                                disabled={!isDateToday}
+                                title={isDateToday ? 'Click to toggle today' : date}
+                                className={`flex-1 h-8 rounded-lg transition-all ${isDateCompleted
+                                    ? 'bg-gradient-to-br from-green-600 to-green-700'
+                                    : isDateToday
+                                      ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                                      : 'bg-gray-800/50'
+                                  } ${isDateToday ? 'cursor-pointer' : 'cursor-default'}`}
+                              >
+                                {isDateCompleted && <Check className="w-4 h-4 mx-auto" />}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1025,65 +1033,73 @@ const handleToggleHabit = async (habitId, date) => {
           {/* Middle Column */}
           <div className="w-80 space-y-4">
             {/* Habit Tracker */}
-            <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 rounded-xl p-4 border border-blue-500/10">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-green-600/20 rounded-lg">
-                    <Check className="w-4 h-4 text-green-400" />
+            <div className="bg-gradient-to-br from-gray-800/60 to-gray-900/60 rounded-xl border border-blue-500/10">
+              <div className="flex items-center justify-between p-4">
+                <button onClick={() => setHabitsExpanded(!habitsExpanded)} className="flex items-center gap-2 flex-1">
+                  <ChevronDown className={`w-4 h-4 text-blue-400 transition-transform ${habitsExpanded ? 'rotate-0' : '-rotate-90'}`} />
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-green-600/20 rounded-lg">
+                      <Check className="w-4 h-4 text-green-400" />
+                    </div>
+                    <h2 className="font-semibold text-gray-100">Habits</h2>
                   </div>
-                  <h2 className="font-semibold">Habits</h2>
-                </div>
-                <button onClick={() => { setShowHabitModal(true); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); }} className="p-2 hover:bg-gray-800/50 rounded-lg">
+                </button>
+                <button onClick={() => { setShowHabitModal(true); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); }} className="p-2 hover:bg-blue-600/20 rounded-lg">
                   <Plus className="w-4 h-4 text-blue-400" />
                 </button>
               </div>
-              {habits.length === 0 ? (
-                <p className="text-sm text-gray-500">No habits yet</p>
-              ) : (
-                <div className="space-y-3">
-                  {habits.map(habit => {
-                    const today = new Date().toISOString().split('T')[0];
-                    const last7Days = Array.from({ length: 7 }, (_, i) => {
-                      const d = new Date();
-                      d.setDate(d.getDate() - (6 - i));
-                      return d.toISOString().split('T')[0];
-                    });
-                    
-                    return (
-                      <div key={habit.id} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="flex-1 text-sm">{habit.name}</span>
-                          <button onClick={() => setShowHabitReport(habit)} className="p-1.5 hover:bg-gray-800/50 rounded-lg">
-                            <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
-                          </button>
-                          <button onClick={() => { setEditingHabit(habit); setHabitForm({ name: habit.name, tagId: habit.tagId }); setShowHabitModal(true); }} className="p-1.5 hover:bg-gray-800/50 rounded-lg">
-                            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
-                          </button>
-                          <button onClick={() => handleDeleteHabit(habit.id)} className="p-1.5 hover:bg-gray-800/50 rounded-lg text-red-400">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <div className="flex gap-1">
-                          {last7Days.map((date, idx) => {
-                            const isDateCompleted = habit.completedDates.includes(date);
-                            const isDateToday = date === today;
-                            return (
-                              <button
-                                key={idx}
-                                onClick={() => isDateToday && handleToggleHabit(habit.id, date)}
-                                disabled={!isDateToday}
-                                className={`flex-1 h-8 rounded-lg transition-all ${
-                                  isDateCompleted ? 'bg-gradient-to-br from-green-600 to-green-700' : isDateToday ? 'bg-gray-700/50 border border-gray-600' : 'bg-gray-800/50'
-                                } ${!isDateToday && 'cursor-default'}`}
-                              >
-                                {isDateCompleted && <Check className="w-4 h-4 mx-auto" />}
+
+              {habitsExpanded && (
+                <div className="px-4 pb-4 border-t border-gray-800/50">
+                  {habits.length === 0 ? (
+                    <p className="text-sm text-gray-500 pt-3">No habits yet</p>
+                  ) : (
+                    <div className="space-y-3 pt-3">
+                      {habits.map(habit => {
+                        const today = new Date().toISOString().split('T')[0];
+                        const last7Days = Array.from({ length: 7 }, (_, i) => {
+                          const d = new Date();
+                          d.setDate(d.getDate() - (6 - i));
+                          return d.toISOString().split('T')[0];
+                        });
+                        
+                        return (
+                          <div key={habit.id} className="space-y-2 pb-2 border-b border-gray-700/50 last:border-0">
+                            <div className="flex items-center gap-2">
+                              <span className="flex-1 text-sm">{habit.name}</span>
+                              <button onClick={() => setShowHabitReport(habit)} className="p-1.5 hover:bg-purple-600/20 rounded-lg">
+                                <BarChart3 className="w-3.5 h-3.5 text-purple-400" />
                               </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+                              <button onClick={() => { setEditingHabit(habit); setHabitForm({ name: habit.name, tagId: habit.tagId }); setShowHabitModal(true); }} className="p-1.5 hover:bg-blue-600/20 rounded-lg">
+                                <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                              </button>
+                              <button onClick={() => handleDeleteHabit(habit.id)} className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="flex gap-1">
+                              {last7Days.map((date, idx) => {
+                                const isDateCompleted = habit.completedDates.includes(date);
+                                const isDateToday = date === today;
+                                return (
+                                  <button
+                                    key={idx}
+                                    onClick={() => isDateToday && handleToggleHabit(habit.id, date)}
+                                    disabled={!isDateToday}
+                                    className={`flex-1 h-8 rounded-lg transition-all ${
+                                      isDateCompleted ? 'bg-gradient-to-br from-green-600 to-green-700' : isDateToday ? 'bg-gray-700/50 border border-gray-600' : 'bg-gray-800/50'
+                                    } ${!isDateToday && 'cursor-default'}`}
+                                  >
+                                    {isDateCompleted && <Check className="w-4 h-4 mx-auto" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
