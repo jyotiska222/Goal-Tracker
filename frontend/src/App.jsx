@@ -165,19 +165,19 @@ const GoalTrackerApp = () => {
     if (currentUser) loadData();
   }, [currentUser]);
 
+  // Health check - periodic without interfering with user interactions
   useEffect(() => {
-    let interval;
-    const handleActivity = () => {
-      clearInterval(interval);
+    if (!currentUser) return;
+    
+    // Initial health check
+    checkSystemHealth();
+    
+    // Periodic health check every 45 seconds (non-blocking)
+    const healthCheckInterval = setInterval(() => {
       checkSystemHealth();
-      interval = setInterval(checkSystemHealth, 30000);
-    };
-    const events = ['mousedown', 'keydown', 'touchstart'];
-    events.forEach(e => document.addEventListener(e, handleActivity));
-    return () => {
-      clearInterval(interval);
-      events.forEach(e => document.removeEventListener(e, handleActivity));
-    };
+    }, 45000);
+    
+    return () => clearInterval(healthCheckInterval);
   }, [currentUser]);
 
   const loadData = async () => {
@@ -389,7 +389,7 @@ const GoalTrackerApp = () => {
 
 const handleToggleHabit = async (habitId, date) => {
   try {
-    const response = await fetch(`${API_URL}/api/habits/${habitId}/toggle/${date}`, {
+    const response = await fetch(`${API_BASE}/habits/${habitId}/toggle/${date}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1018,7 +1018,7 @@ const handleToggleHabit = async (habitId, date) => {
                             return (
                               <button
                                 key={idx}
-                                onClick={() => isDateToday && handleToggleHabit(habit.id)}
+                                onClick={() => isDateToday && handleToggleHabit(habit.id, date)}
                                 disabled={!isDateToday}
                                 className={`flex-1 h-8 rounded-lg transition-all ${
                                   isDateCompleted ? 'bg-gradient-to-br from-green-600 to-green-700' : isDateToday ? 'bg-gray-700/50 border border-gray-600' : 'bg-gray-800/50'
