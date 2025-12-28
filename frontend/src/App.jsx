@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
-import { Toaster, toast } from 'sonner';
 
 const API_BASE = process.env.NODE_ENV === 'production' 
   ? 'https://goal-tracker-tihi.onrender.com/api'
@@ -219,12 +218,11 @@ const GoalTrackerApp = () => {
         localStorage.setItem('goalTrackerUser', JSON.stringify(data.user));
         setShowAuth(false);
         setAuthForm({ username: '', password: '' });
-        toast.success(isLogin ? 'Login successful!' : 'Account created!');
       } else {
-        toast.error(data.message || 'Authentication failed');
+        alert(data.message || 'Authentication failed');
       }
     } catch (error) {
-      toast.error(`Authentication error: ${error.message}`);
+      alert(`Authentication error: ${error.message}`);
     }
   };
 
@@ -235,7 +233,7 @@ const GoalTrackerApp = () => {
   };
 
   const handleSaveTag = async () => {
-    if (!tagForm.name.trim()) return toast.error('Tag name cannot be empty');
+    if (!tagForm.name.trim()) return alert('Tag name cannot be empty');
     try {
       const method = editingTag ? 'PUT' : 'POST';
       const endpoint = editingTag ? `/tags/${editingTag.id}` : '/tags';
@@ -254,12 +252,9 @@ const GoalTrackerApp = () => {
         setShowTagModal(false);
         setTagForm({ name: '', color: '#3b82f6' });
         setEditingTag(null);
-        toast.success(editingTag ? 'Tag updated!' : 'Tag created!');
-      } else {
-        toast.error('Failed to save tag');
       }
     } catch (error) {
-      toast.error('Error saving tag');
+      alert('Error saving tag');
     }
   };
 
@@ -268,19 +263,18 @@ const GoalTrackerApp = () => {
       const response = await fetch(`${API_BASE}/tags/${tagId}`, { method: 'DELETE' });
       if (response.ok) {
         await loadData();
-        toast.success('Tag deleted!');
       } else {
         const error = await response.json();
-        toast.error(`Error deleting tag: ${error.error || 'Unknown error'}`);
+        alert(`Error deleting tag: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error deleting tag:', error);
-      toast.error('Error deleting tag');
+      alert('Error deleting tag');
     }
   };
 
   const handleSaveGoal = async () => {
-    if (!goalForm.title.trim()) return toast.error('Goal title cannot be empty');
+    if (!goalForm.title.trim()) return alert('Goal title cannot be empty');
     try {
       let endpoint, body;
       if (goalType === 'monthly') {
@@ -326,12 +320,9 @@ const GoalTrackerApp = () => {
         setShowGoalModal(false);
         setGoalForm({ title: '', tagId: '', parentId: '' });
         setEditingGoal(null);
-        toast.success(editingGoal ? 'Goal updated!' : 'Goal created!');
-      } else {
-        toast.error('Failed to save goal');
       }
     } catch (error) {
-      toast.error('Error saving goal');
+      alert('Error saving goal');
     }
   };
 
@@ -341,14 +332,13 @@ const GoalTrackerApp = () => {
       const response = await fetch(`${API_BASE}${endpoints[type]}`, { method: 'DELETE' });
       if (response.ok) {
         await loadData();
-        toast.success('Goal deleted!');
       } else {
         const error = await response.json();
-        toast.error(`Error deleting goal: ${error.error || 'Unknown error'}`);
+        alert(`Error deleting goal: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error deleting goal:', error);
-      toast.error('Error deleting goal');
+      alert('Error deleting goal');
     }
   };
 
@@ -362,19 +352,18 @@ const GoalTrackerApp = () => {
       });
       if (response.ok) {
         await loadData();
-        toast.success('Goal updated!');
       } else {
         const error = await response.json();
-        toast.error(`Error updating goal: ${error.error || 'Unknown error'}`);
+        alert(`Error updating goal: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error updating goal:', error);
-      toast.error('Error updating goal');
+      alert('Error updating goal');
     }
   };
 
   const handleSaveHabit = async () => {
-    if (!habitForm.name.trim()) return toast.error('Habit name cannot be empty');
+    if (!habitForm.name.trim()) return alert('Habit name cannot be empty');
     try {
       const endpoint = editingHabit ? `/habits/${editingHabit.id}` : '/habits';
       const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -392,12 +381,9 @@ const GoalTrackerApp = () => {
         setShowHabitModal(false);
         setHabitForm({ name: '', tagId: '' });
         setEditingHabit(null);
-        toast.success(editingHabit ? 'Habit updated!' : 'Habit created!');
-      } else {
-        toast.error('Failed to save habit');
       }
     } catch (error) {
-      toast.error('Error saving habit');
+      alert('Error saving habit');
     }
   };
 
@@ -417,10 +403,9 @@ const handleToggleHabit = async (habitId, date) => {
     
     // Update the habit in state
     setHabits(habits.map(h => h.id === habitId ? updatedHabit : h));
-    toast.success('Habit toggled!');
   } catch (error) {
     console.error('Error toggling habit:', error);
-    toast.error(error.message);
+    alert(error.message);
   }
 };
 
@@ -429,14 +414,13 @@ const handleToggleHabit = async (habitId, date) => {
       const response = await fetch(`${API_BASE}/habits/${habitId}`, { method: 'DELETE' });
       if (response.ok) {
         await loadData();
-        toast.success('Habit deleted!');
       } else {
         const error = await response.json();
-        toast.error(`Error deleting habit: ${error.error || 'Unknown error'}`);
+        alert(`Error deleting habit: ${error.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error deleting habit:', error);
-      toast.error('Error deleting habit');
+      alert('Error deleting habit');
     }
   };
 
@@ -652,20 +636,7 @@ const handleToggleHabit = async (habitId, date) => {
   );
 
   return (
-    <>
-      <Toaster
-        position="top-center"
-        richColors
-        theme="dark"
-        toastOptions={{
-          style: {
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            color: '#e0f2fe'
-          }
-        }}
-      />
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-900/95 via-gray-900/90 to-gray-900/95 border-b border-blue-500/20 backdrop-blur-xl p-3 sm:p-4 sticky top-0 z-50 shadow-xl">
         <div className="w-full flex items-center justify-between gap-3">
@@ -1360,7 +1331,6 @@ const handleToggleHabit = async (habitId, date) => {
         </div>
       )}
     </div>
-    </>
   );
 };
 
