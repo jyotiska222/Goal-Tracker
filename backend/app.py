@@ -396,6 +396,26 @@ def update_monthly_goal(goal_id):
     )
     
     if result:
+        # If marking as completed, cascade to all child weekly goals
+        if update_data.get('completed') is True:
+            db.weekly_goals.update_many(
+                {'parentId': goal_id},
+                {'$set': {
+                    'completed': True,
+                    'updatedAt': datetime.now().isoformat()
+                }}
+            )
+            # Also cascade to all daily goals under those weekly goals
+            weekly_goals = db.weekly_goals.find({'parentId': goal_id}, {'_id': 1})
+            for week_goal in weekly_goals:
+                db.daily_goals.update_many(
+                    {'parentId': str(week_goal['_id'])},
+                    {'$set': {
+                        'completed': True,
+                        'updatedAt': datetime.now().isoformat()
+                    }}
+                )
+        
         return jsonify(serialize_doc(result)), 200
     
     return jsonify({'error': 'Goal not found', 'success': False}), 404
@@ -486,6 +506,16 @@ def update_weekly_goal(goal_id):
     )
     
     if result:
+        # If marking as completed, cascade to all child daily goals
+        if update_data.get('completed') is True:
+            db.daily_goals.update_many(
+                {'parentId': goal_id},
+                {'$set': {
+                    'completed': True,
+                    'updatedAt': datetime.now().isoformat()
+                }}
+            )
+        
         return jsonify(serialize_doc(result)), 200
     
     return jsonify({'error': 'Goal not found', 'success': False}), 404
