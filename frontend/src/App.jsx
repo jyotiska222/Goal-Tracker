@@ -741,37 +741,23 @@ const handleToggleHabit = async (habitId, date) => {
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
       {/* Loading Screen */}
       {isLoading && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999]">
-          <div className="flex flex-col items-center gap-6">
-            {/* Animated Spinner */}
-            <div className="relative w-20 h-20">
-              <div className="absolute inset-0 rounded-full border-4 border-blue-500/30 border-t-blue-500 animate-spin"></div>
-              <div className="absolute inset-2 rounded-full border-4 border-purple-500/20 border-b-purple-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 opacity-50"></div>
-              </div>
-            </div>
-            
-            {/* Loading Text */}
-            <div className="text-center space-y-2">
-              <h3 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Loading Your Goals
-              </h3>
-              <p className="text-sm text-gray-400">
-                Syncing with your timezone...
-              </p>
-            </div>
-            
-            {/* Progress Dots */}
-            <div className="flex gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-            </div>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[999]">
+          <div className="flex flex-col items-center gap-4">
+
+            {/* Simple Spinner */}
+            <div className="w-10 h-10 rounded-full border-4 border-blue-500/30 border-t-blue-500 animate-spin"></div>
+
+            {/* Text */}
+            <p className="text-sm text-gray-300">
+              Loading your goals...
+            </p>
+
           </div>
         </div>
+
+
       )}
-      
+
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-900/95 via-gray-900/90 to-gray-900/95 border-b border-blue-500/20 backdrop-blur-xl p-3 sm:p-4 sticky top-0 z-50 shadow-xl">
         <div className="w-full flex items-center justify-between gap-3">
