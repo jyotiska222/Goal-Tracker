@@ -17,13 +17,14 @@ from flask_cors import CORS
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure, ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import hashlib
 import os
 from dotenv import load_dotenv
 import logging
 from functools import wraps
 import time
+import pytz
 
 load_dotenv()
 
@@ -64,6 +65,7 @@ try:
     
     # User index
     db.users.create_index([('username', ASCENDING)], unique=True, background=True)
+    db.users.create_index([('timezone', ASCENDING)], background=True)
     
     # Tags indexes
     db.tags.create_index([('userId', ASCENDING)], background=True)
@@ -110,6 +112,45 @@ CORS(app,
 def hash_password(password):
     """Hash password using SHA-256"""
     return hashlib.sha256(password.encode()).hexdigest()
+
+def get_user_timezone(user_id):
+    """Get user's timezone from database, default to UTC"""
+    user = db.users.find_one({'_id': ObjectId(user_id)}, {'timezone': 1})
+    return user.get('timezone', 'UTC') if user else 'UTC'
+
+def get_utc_now():
+    """Get current UTC time with timezone info"""
+    return datetime.now(timezone.utc)
+
+def convert_to_user_timezone(dt, user_timezone='UTC'):
+    """Convert UTC datetime to user's timezone"""
+    if dt is None:
+        return None
+    # If datetime is naive (no timezone), assume UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    try:
+        tz = pytz.timezone(user_timezone)
+        return dt.astimezone(tz)
+    except:
+        return dt.astimezone(pytz.UTC)
+
+def convert_to_utc(dt, user_timezone='UTC'):
+    """Convert user's local datetime to UTC"""
+    if dt is None:
+        return None
+    try:
+        tz = pytz.timezone(user_timezone)
+        # If string, parse it
+        if isinstance(dt, str):
+            dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        # If naive, localize to user's timezone first
+        if dt.tzinfo is None:
+            dt = tz.localize(dt)
+        # Convert to UTC
+        return dt.astimezone(timezone.utc)
+    except:
+        return dt if isinstance(dt, datetime) else datetime.fromisoformat(dt)
 
 def serialize_doc(doc):
     """Convert MongoDB document to JSON-serializable format"""
@@ -228,7 +269,7 @@ def login():
     # Use projection and index
     user = db.users.find_one(
         {'username': username, 'password': hashed_password},
-        {'username': 1}
+        {'username': 1, 'timezone': 1}
     )
     
     if user:
@@ -236,7 +277,8 @@ def login():
             'success': True, 
             'user': {
                 'id': str(user['_id']), 
-                'username': user['username']
+                'username': user['username'],
+                'timezone': user.get('timezone', 'UTC')
             }
         }), 200
     
@@ -252,9 +294,16 @@ def signup():
     
     username = data.get('username')
     password = data.get('password')
+    timezone_str = data.get('timezone', 'UTC')
     
     if not username or not password:
         return jsonify({'success': False, 'message': 'Username and password required'}), 400
+    
+    # Validate timezone
+    try:
+        pytz.timezone(timezone_str)
+    except:
+        timezone_str = 'UTC'
     
     # Check if username exists (uses index)
     if db.users.find_one({'username': username}, {'_id': 1}):
@@ -263,7 +312,8 @@ def signup():
     new_user = {
         'username': username,
         'password': hash_password(password),
-        'createdAt': datetime.now().isoformat()
+        'timezone': timezone_str,
+        'createdAt': get_utc_now().isoformat()
     }
     
     result = db.users.insert_one(new_user)
@@ -272,9 +322,45 @@ def signup():
         'success': True, 
         'user': {
             'id': str(result.inserted_id), 
-            'username': username
+            'username': username,
+            'timezone': timezone_str
         }
     }), 201
+
+# ============== USER ENDPOINTS ==============
+@app.route('/api/user/<user_id>/timezone', methods=['PUT'])
+@handle_db_errors
+def update_user_timezone(user_id):
+    """Update user's timezone from geolocation"""
+    data = request.json
+    
+    if not data or not data.get('timezone'):
+        return jsonify({'error': 'Timezone required', 'success': False}), 400
+    
+    if not ObjectId.is_valid(user_id):
+        return jsonify({'error': 'Invalid user ID', 'success': False}), 400
+    
+    timezone_str = data.get('timezone')
+    
+    # Validate timezone
+    try:
+        pytz.timezone(timezone_str)
+    except:
+        return jsonify({'error': 'Invalid timezone', 'success': False}), 400
+    
+    result = db.users.find_one_and_update(
+        {'_id': ObjectId(user_id)},
+        {'$set': {'timezone': timezone_str}},
+        return_document=True
+    )
+    
+    if result:
+        return jsonify({
+            'success': True,
+            'timezone': result.get('timezone', 'UTC')
+        }), 200
+    
+    return jsonify({'error': 'User not found', 'success': False}), 404
 
 # ============== TAGS ENDPOINTS ==============
 @app.route('/api/tags/<user_id>', methods=['GET'])
@@ -299,7 +385,7 @@ def create_tag():
         'name': data.get('name'),
         'color': data.get('color', '#3b82f6'),
         'userId': data.get('userId'),
-        'createdAt': datetime.now().isoformat()
+        'createdAt': get_utc_now().isoformat()
     }
     
     result = db.tags.insert_one(new_tag)
@@ -321,7 +407,7 @@ def update_tag(tag_id):
     update_data = {
         'name': data.get('name'),
         'color': data.get('color'),
-        'updatedAt': datetime.now().isoformat()
+        'updatedAt': get_utc_now().isoformat()
     }
     update_data = {k: v for k, v in update_data.items() if v is not None}
     
@@ -375,7 +461,7 @@ def create_monthly_goal():
         'year': data.get('year'),
         'userId': data.get('userId'),
         'completed': False,
-        'createdAt': datetime.now().isoformat()
+        'createdAt': get_utc_now().isoformat()
     }
     
     result = db.monthly_goals.insert_one(new_goal)
@@ -400,7 +486,7 @@ def update_monthly_goal(goal_id):
         'month': data.get('month'),
         'year': data.get('year'),
         'completed': data.get('completed'),
-        'updatedAt': datetime.now().isoformat()
+        'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
     
     result = db.monthly_goals.find_one_and_update(
@@ -416,7 +502,7 @@ def update_monthly_goal(goal_id):
                 {'parentId': goal_id},
                 {'$set': {
                     'completed': True,
-                    'updatedAt': datetime.now().isoformat()
+                    'updatedAt': get_utc_now().isoformat()
                 }}
             )
             # Also cascade to all daily goals under those weekly goals
@@ -426,7 +512,7 @@ def update_monthly_goal(goal_id):
                     {'parentId': str(week_goal['_id'])},
                     {'$set': {
                         'completed': True,
-                        'updatedAt': datetime.now().isoformat()
+                        'updatedAt': get_utc_now().isoformat()
                     }}
                 )
         
@@ -476,7 +562,7 @@ def create_weekly_goal():
         'year': data.get('year'),
         'userId': data.get('userId'),
         'completed': False,
-        'createdAt': datetime.now().isoformat()
+        'createdAt': get_utc_now().isoformat()
     }
     
     # Inherit tag from parent if no tag specified and parent exists
@@ -510,7 +596,7 @@ def update_weekly_goal(goal_id):
         'weekNumber': data.get('weekNumber'),
         'year': data.get('year'),
         'completed': data.get('completed'),
-        'updatedAt': datetime.now().isoformat()
+        'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
     
     result = db.weekly_goals.find_one_and_update(
@@ -526,7 +612,7 @@ def update_weekly_goal(goal_id):
                 {'parentId': goal_id},
                 {'$set': {
                     'completed': True,
-                    'updatedAt': datetime.now().isoformat()
+                    'updatedAt': get_utc_now().isoformat()
                 }}
             )
         
@@ -573,7 +659,7 @@ def create_daily_goal():
         'date': data.get('date'),
         'userId': data.get('userId'),
         'completed': False,
-        'createdAt': datetime.now().isoformat()
+        'createdAt': get_utc_now().isoformat()
     }
     
     # Inherit tag from parent if no tag specified and parent exists
@@ -604,7 +690,7 @@ def update_daily_goal(goal_id):
         'parentId': data.get('parentId'),
         'date': data.get('date'),
         'completed': data.get('completed'),
-        'updatedAt': datetime.now().isoformat()
+        'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
     
     result = db.daily_goals.find_one_and_update(
@@ -655,8 +741,8 @@ def create_habit():
         'tagId': data.get('tagId', ''),
         'userId': data.get('userId'),
         'completedDates': [],
-        'startDate': datetime.now().strftime('%Y-%m-%d'),
-        'createdAt': datetime.now().isoformat()
+        'startDate': get_utc_now().strftime('%Y-%m-%d'),
+        'createdAt': get_utc_now().isoformat()
     }
     
     result = db.habits.insert_one(new_habit)
@@ -679,7 +765,7 @@ def update_habit(habit_id):
         'name': data.get('name'),
         'tagId': data.get('tagId'),
         'completedDates': data.get('completedDates'),
-        'updatedAt': datetime.now().isoformat()
+        'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
     
     result = db.habits.find_one_and_update(
@@ -713,7 +799,7 @@ def toggle_habit(habit_id, date):
             return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD', 'success': False}), 400
     
     # Check if the date is today
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = get_utc_now().strftime('%Y-%m-%d')
     
     # Log for debugging
     logger.info(f"Toggle habit: received date={date}, normalized={normalized_date}, today={today}")
@@ -743,7 +829,7 @@ def toggle_habit(habit_id, date):
         {'_id': ObjectId(habit_id)},
         {'$set': {
             'completedDates': completed_dates,
-            'updatedAt': datetime.now().isoformat()
+            'updatedAt': get_utc_now().isoformat()
         }},
         return_document=True
     )
@@ -776,7 +862,7 @@ def get_habit_stats(habit_id):
         return jsonify({'error': 'Habit not found', 'success': False}), 404
     
     start_date = datetime.strptime(habit['startDate'], '%Y-%m-%d')
-    today = datetime.now()
+    today = get_utc_now()
     total_days = (today - start_date).days + 1
     completed_days = len(habit.get('completedDates', []))
     missed_days = total_days - completed_days

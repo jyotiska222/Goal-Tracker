@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from './context/ToastContext';
 import { executeWithToast, toastConfigs } from './utils/toastConfigs';
+import { getUserTimezone, formatDateLocal, getTodayLocal, getLocalTime, isTodayLocal } from './utils/timezoneHelper';
+import { FiLogOut } from "react-icons/fi";
 
 const API_BASE = process.env.NODE_ENV === 'production' 
   ? 'https://goal-tracker-tihi.onrender.com/api'
@@ -9,9 +11,18 @@ const API_BASE = process.env.NODE_ENV === 'production'
 
 const GoalTrackerApp = () => {
   const { showToast, updateToast } = useToast();
-  const [currentUser, setCurrentUser] = useState(null);
-  const [showAuth, setShowAuth] = useState(true);
+  
+  // Check for existing user in localStorage immediately
+  const savedUser = typeof window !== 'undefined' 
+    ? localStorage.getItem('goalTrackerUser')
+    : null;
+  const initialUser = savedUser ? JSON.parse(savedUser) : null;
+  
+  const [currentUser, setCurrentUser] = useState(initialUser);
+  const [showAuth, setShowAuth] = useState(!initialUser);
   const [isLogin, setIsLogin] = useState(true);
+  const [isAuthChecking, setIsAuthChecking] = useState(!initialUser ? false : true);
+  const [isLoading, setIsLoading] = useState(false);
   
   const [tags, setTags] = useState([]);
   const [monthlyGoals, setMonthlyGoals] = useState([]);
@@ -96,6 +107,30 @@ const GoalTrackerApp = () => {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
+          
+          // Detect user's timezone from browser
+          const userTimezone = getUserTimezone();
+          
+          // Update user's timezone on backend if user is logged in
+          if (currentUser) {
+            try {
+              await fetch(`${API_BASE}/user/${currentUser.id}/timezone`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timezone: userTimezone })
+              }).catch(() => {}); // Silently fail if timezone update fails
+            } catch (error) {
+              console.error('Error updating timezone:', error);
+            }
+          }
+          
+          // Update user object in state and localStorage
+          setCurrentUser(prev => {
+            const updated = { ...prev, timezone: userTimezone };
+            localStorage.setItem('goalTrackerUser', JSON.stringify(updated));
+            return updated;
+          });
+          
           try {
             const response = await fetch(
               `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=auto`
@@ -117,7 +152,7 @@ const GoalTrackerApp = () => {
               for (let i = 0; i < Math.min(10, data.daily.time.length); i++) {
                 const date = new Date(today);
                 date.setDate(date.getDate() + i);
-                const dateStr = date.toISOString().split('T')[0];
+                const dateStr = formatDateLocal(date);
                 forecast[dateStr] = {
                   maxTemp: Math.round(data.daily.temperature_2m_max[i]),
                   minTemp: Math.round(data.daily.temperature_2m_min[i]),
@@ -186,6 +221,7 @@ const GoalTrackerApp = () => {
 
   const loadData = async () => {
     try {
+      setIsLoading(true);
       const [tagsRes, monthlyRes, weeklyRes, dailyRes, habitsRes] = await Promise.all([
         fetch(`${API_BASE}/tags/${currentUser.id}`),
         fetch(`${API_BASE}/goals/monthly/${currentUser.id}`),
@@ -201,6 +237,8 @@ const GoalTrackerApp = () => {
       if (habitsRes.ok) setHabits(await habitsRes.json());
     } catch (error) {
       console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -336,7 +374,7 @@ const GoalTrackerApp = () => {
             title: goalForm.title,
             tagId: goalForm.tagId,
             parentId: goalForm.parentId || '',
-            date: selectedDate.toISOString().split('T')[0],
+            date: formatDateLocal(selectedDate),
             ...(editingGoal ? {} : { userId: currentUser.id })
           };
         }
@@ -487,14 +525,25 @@ const handleToggleHabit = async (habitId, date) => {
 
   const getWeekStart = (date) => {
     const d = new Date(date);
+    // Get day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
     const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(d.setDate(diff)).toISOString().split('T')[0];
+    // Calculate days to go back to reach Monday
+    // If Sunday (0), go forward 1 day to Monday; otherwise go back (day - 1) days
+    const offset = day === 0 ? 1 : -(day - 1);
+    const weekStartDate = new Date(d);
+    weekStartDate.setDate(weekStartDate.getDate() + offset);
+    return formatDateLocal(weekStartDate);
   };
 
   const getWeekEnd = (date) => {
-    const start = new Date(getWeekStart(date));
-    return new Date(start.setDate(start.getDate() + 6)).toISOString().split('T')[0];
+    const d = new Date(date);
+    const day = d.getDay();
+    const offset = day === 0 ? 1 : -(day - 1);
+    const weekStartDate = new Date(d);
+    weekStartDate.setDate(weekStartDate.getDate() + offset);
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    return formatDateLocal(weekEndDate);
   };
 
   const getDaysInMonth = (date) => {
@@ -511,7 +560,7 @@ const handleToggleHabit = async (habitId, date) => {
   };
 
   const getGoalsForDate = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = formatDateLocal(date);
     return dailyGoals.filter(g => g.date === dateStr);
   };
 
@@ -522,7 +571,7 @@ const handleToggleHabit = async (habitId, date) => {
     const selectedMonth = selectedDate.getMonth();
     const selectedYear = selectedDate.getFullYear();
     const selectedWeek = getISOWeekNumber(selectedDate);
-    const selectedDateStr = selectedDate.toISOString().split('T')[0];
+    const selectedDateStr = formatDateLocal(selectedDate);
 
     return {
       monthly: monthlyGoals.filter(g => g.month === selectedMonth && g.year === selectedYear),
@@ -551,7 +600,7 @@ const handleToggleHabit = async (habitId, date) => {
     return { totalDays, completedDays, missedDays: totalDays - completedDays };
   };
 
-  const isToday = (date) => date.toDateString() === new Date().toDateString();
+  const isToday = (date) => isTodayLocal(date);
 
   if (showAuth) {
     return (
@@ -690,6 +739,39 @@ const handleToggleHabit = async (habitId, date) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
+      {/* Loading Screen */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999]">
+          <div className="flex flex-col items-center gap-6">
+            {/* Animated Spinner */}
+            <div className="relative w-20 h-20">
+              <div className="absolute inset-0 rounded-full border-4 border-blue-500/30 border-t-blue-500 animate-spin"></div>
+              <div className="absolute inset-2 rounded-full border-4 border-purple-500/20 border-b-purple-500 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 opacity-50"></div>
+              </div>
+            </div>
+            
+            {/* Loading Text */}
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                Loading Your Goals
+              </h3>
+              <p className="text-sm text-gray-400">
+                Syncing with your timezone...
+              </p>
+            </div>
+            
+            {/* Progress Dots */}
+            <div className="flex gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="bg-gradient-to-r from-gray-900/95 via-gray-900/90 to-gray-900/95 border-b border-blue-500/20 backdrop-blur-xl p-3 sm:p-4 sticky top-0 z-50 shadow-xl">
         <div className="w-full flex items-center justify-between gap-3">
@@ -718,13 +800,19 @@ const handleToggleHabit = async (habitId, date) => {
             
             <div className="flex flex-col items-end">
               <div className="font-bold bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent text-sm">
-                {currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                {getLocalTime(currentTime)}
+                <div className="from-blue-400 to-blue-300 text-[7px] hidden sm:block text-right">
+                  ({currentUser.timezone || 'UTC'})
+                </div>
               </div>
               <div className="text-gray-400 text-xs hidden sm:block">Hi, {currentUser.username}</div>
             </div>
-            
-            <button onClick={handleLogout} className="text-xs sm:text-sm bg-gradient-to-r from-red-600 to-red-700 px-3 py-2 rounded-xl font-semibold">
-              Logout
+
+            <button
+              onClick={handleLogout}
+              className="bg-gradient-to-r from-red-600 to-red-700 p-2 rounded-xl hover:scale-105 transition"
+            >
+              <FiLogOut className="text-white w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
@@ -804,11 +892,11 @@ const handleToggleHabit = async (habitId, date) => {
               ) : (
                 <div className="space-y-3 pt-3">
                   {habits.map(habit => {
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = getTodayLocal();
                     const last7Days = Array.from({ length: 7 }, (_, i) => {
                       const d = new Date();
                       d.setDate(d.getDate() - (6 - i));
-                      return d.toISOString().split('T')[0];
+                      return formatDateLocal(d);
                     });
 
                     return (
@@ -933,8 +1021,8 @@ const handleToggleHabit = async (habitId, date) => {
               if (!day) return <div key={`empty-${idx}`} />;
               
               const goalsForDay = getGoalsForDate(day);
-              const dayIsToday = isToday(day);
-              const dateStr = day.toISOString().split('T')[0];
+              const dayIsToday = isTodayLocal(day);
+              const dateStr = formatDateLocal(day);
               const dayForecast = forecastData[dateStr];
               
               return (
@@ -1056,11 +1144,11 @@ const handleToggleHabit = async (habitId, date) => {
                   ) : (
                     <div className="space-y-3 pt-3">
                       {habits.map(habit => {
-                        const today = new Date().toISOString().split('T')[0];
+                        const today = getTodayLocal();
                         const last7Days = Array.from({ length: 7 }, (_, i) => {
                           const d = new Date();
                           d.setDate(d.getDate() - (6 - i));
-                          return d.toISOString().split('T')[0];
+                          return formatDateLocal(d);
                         });
                         
                         return (
@@ -1176,7 +1264,7 @@ const handleToggleHabit = async (habitId, date) => {
                       
                       const goalsForDay = getGoalsForDate(day);
                       const dayIsToday = isToday(day);
-                      const dateStr = day.toISOString().split('T')[0];
+                      const dateStr = formatDateLocal(day);
                       const dayForecast = forecastData[dateStr];
                       
                       return (
@@ -1329,7 +1417,7 @@ const handleToggleHabit = async (habitId, date) => {
                 for (let i = 364; i >= 0; i--) {
                   const d = new Date(today);
                   d.setDate(d.getDate() - i);
-                  last365Days.push(d.toISOString().split('T')[0]);
+                  last365Days.push(formatDateLocal(d));
                 }
                 
                 const weeks = [];
@@ -1372,7 +1460,7 @@ const handleToggleHabit = async (habitId, date) => {
                           <div key={weekIdx} className="flex flex-col gap-1 flex-shrink-0">
                             {week.map((date) => {
                               const isCompleted = showHabitReport.completedDates.includes(date);
-                              const isCurrentDay = date === new Date().toISOString().split('T')[0];
+                              const isCurrentDay = date === getTodayLocal();
                               return (
                                 <div key={date} className={`w-3.5 h-3.5 rounded-sm cursor-pointer transition-all hover:scale-110 ${isCompleted ? 'bg-green-500 shadow-md shadow-green-500/30' : 'bg-gray-700/50'} ${isCurrentDay ? 'ring-2 ring-blue-400' : ''}`} title={`${date}: ${isCompleted ? 'Completed' : 'Missed'}`} />
                               );
