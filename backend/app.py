@@ -98,10 +98,10 @@ except Exception as e:
     logger.error(f"❌ MongoDB Connection Error: {e}")
     db = None
 
-# CORS Configuration
+# CORS Configuration - read from environment variable
+CORS_ORIGINS = os.getenv('CORS_ORIGINS', '').split(',')
 CORS(app, 
-     origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", 
-              "http://localhost:5174", "http://127.0.0.1:5000", "http://192.168.31.175:5000", "https://goal-tracker-gilt.vercel.app"],
+     origins=[origin.strip() for origin in CORS_ORIGINS if origin.strip()],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"],
      supports_credentials=True)
