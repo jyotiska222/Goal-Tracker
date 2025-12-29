@@ -39,7 +39,7 @@ werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.setLevel(logging.ERROR)
 
 # MongoDB Configuration with optimized settings
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb+srv://goaltracker_dev:25930374Jj@cluster0.hz9nmde.mongodb.net/goaltracker?retryWrites=true&w=majority&appName=Cluster0')
+MONGO_URI = os.getenv('MONGO_URI')
 
 # Create MongoDB client with connection pooling and timeout settings
 try:
@@ -103,7 +103,7 @@ CORS(app,
      origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", 
               "http://localhost:5174", "http://127.0.0.1:5000", "http://192.168.31.175:5000", 
               "https://goal-tracker-liart.vercel.app", "https://goal-tracker.vercel.app", 
-              "https://goal-tracker-pearl.vercel.app", "https://goal-tracker-fawn.vercel.app", "https://goal-tracker-kappa-taupe.vercel.app"],
+              "https://goal-tracker-pearl.vercel.app", "https://goal-tracker-fawn.vercel.app", "https://goal-tracker-ten-blush.vercel.app"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization"],
      supports_credentials=True)
