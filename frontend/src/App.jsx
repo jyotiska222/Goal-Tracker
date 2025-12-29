@@ -5,9 +5,9 @@ import { executeWithToast, toastConfigs } from './utils/toastConfigs';
 import { getUserTimezone, formatDateLocal, getTodayLocal, getLocalTime, isTodayLocal } from './utils/timezoneHelper';
 import { FiLogOut } from "react-icons/fi";
 
-const API_BASE = process.env.NODE_ENV === 'production' 
-  ? 'https://goal-tracker-tihi.onrender.com/api'
-  : 'http://127.0.0.1:5000/api';
+const API_BASE = import.meta.env.VITE_API_BASE || (process.env.NODE_ENV === 'production' 
+  ? 'https://goal-tracker-production-9748.up.railway.app/api'
+  : 'http://127.0.0.1:5000/api');
 
 const GoalTrackerApp = () => {
   const { showToast, updateToast } = useToast();
@@ -18,10 +18,10 @@ const GoalTrackerApp = () => {
     : null;
   const initialUser = savedUser ? JSON.parse(savedUser) : null;
   
-  const [currentUser, setCurrentUser] = useState(initialUser);
-  const [showAuth, setShowAuth] = useState(!initialUser);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showAuth, setShowAuth] = useState(true);
   const [isLogin, setIsLogin] = useState(true);
-  const [isAuthChecking, setIsAuthChecking] = useState(!initialUser ? false : true);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);  // Always checking initially
   const [isLoading, setIsLoading] = useState(false);
   
   const [tags, setTags] = useState([]);
@@ -187,17 +187,34 @@ const GoalTrackerApp = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Validate and restore user session on mount
   useEffect(() => {
-    const savedUser = localStorage.getItem('goalTrackerUser');
-    if (savedUser) {
-      try {
-        const user = JSON.parse(savedUser);
-        setCurrentUser(user);
-        setShowAuth(false);
-      } catch (error) {
-        localStorage.removeItem('goalTrackerUser');
+    const restoreSession = async () => {
+      const savedUser = localStorage.getItem('goalTrackerUser');
+      if (savedUser) {
+        try {
+          const user = JSON.parse(savedUser);
+          // Validate user has required fields
+          if (user && user.id && user.username) {
+            setCurrentUser(user);
+            setShowAuth(false);
+          } else {
+            // Invalid user data
+            localStorage.removeItem('goalTrackerUser');
+            setShowAuth(true);
+          }
+        } catch (error) {
+          console.error('Error restoring session:', error);
+          localStorage.removeItem('goalTrackerUser');
+          setShowAuth(true);
+        }
+      } else {
+        setShowAuth(true);
       }
-    }
+      setIsAuthChecking(false);  // Done checking
+    };
+    
+    restoreSession();
   }, []);
 
   useEffect(() => {
