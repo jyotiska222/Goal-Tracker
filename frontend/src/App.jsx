@@ -216,8 +216,8 @@ const GoalTrackerApp = () => {
   }, []);
 
   useEffect(() => {
-    if (currentUser) loadData();
-  }, [currentUser]);
+    if (currentUser) loadData(isAuthChecking);
+  }, [currentUser, isAuthChecking]);
 
   // Health check - periodic without interfering with user interactions
   useEffect(() => {
@@ -234,9 +234,9 @@ const GoalTrackerApp = () => {
     return () => clearInterval(healthCheckInterval);
   }, [currentUser]);
 
-  const loadData = async () => {
+  const loadData = async (showLoader = false) => {
     try {
-      setIsLoading(true);
+      if (showLoader) setIsLoading(true);
       const [tagsRes, monthlyRes, weeklyRes, dailyRes, habitsRes] = await Promise.all([
         fetch(`${API_BASE}/tags/${currentUser.id}`),
         fetch(`${API_BASE}/goals/monthly/${currentUser.id}`),
@@ -253,7 +253,7 @@ const GoalTrackerApp = () => {
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
-      setIsLoading(false);
+      if (showLoader) setIsLoading(false);
     }
   };
 
