@@ -5,9 +5,7 @@ import { executeWithToast, toastConfigs } from './utils/toastConfigs';
 import { getUserTimezone, formatDateLocal, getTodayLocal, getLocalTime, isTodayLocal } from './utils/timezoneHelper';
 import { FiLogOut } from "react-icons/fi";
 
-const API_BASE = import.meta.env.VITE_API_BASE || (process.env.NODE_ENV === 'production' 
-  ? 'https://goal-tracker-production-9748.up.railway.app/api'
-  : 'http://127.0.0.1:5000/api');
+const API_BASE = import.meta.env.VITE_API_BASE || (process.env.NODE_ENV);
 
 const GoalTrackerApp = () => {
   const { showToast, updateToast } = useToast();
