@@ -14,6 +14,8 @@
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure, ConnectionFailure, ServerSelectionTimeoutError
 from bson.objectid import ObjectId
@@ -131,11 +133,36 @@ CORS(app,
      allow_headers=["Content-Type", "Authorization"],
      supports_credentials=True)
 
-# ============== UTILITY FUNCTIONS ==============
+# ============== RATE LIMITING CONFIGURATION ==============
+# Initialize Flask-Limiter with in-memory storage (use Redis in production for distributed systems)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],  # Global default limits
+    storage_uri="memory://",  # In-memory storage - for production use Redis: "redis://localhost:6379"
+)
+
+# Enable rate limit headers in responses
+limiter.init_app(app)
+# Cache for timezone lookups (in-memory cache to reduce DB hits)
+_timezone_cache = {}
+_cache_timeout = 3600  # 1 hour cache
+
 def get_user_timezone(user_id):
-    """Get user's timezone from database, default to UTC"""
+    """Get user's timezone from database with caching, default to UTC"""
+    # Check cache first
+    if user_id in _timezone_cache:
+        cached_tz, cached_time = _timezone_cache[user_id]
+        if time.time() - cached_time < _cache_timeout:
+            return cached_tz
+    
+    # Query database with projection (only timezone field)
     user = db.users.find_one({'_id': ObjectId(user_id)}, {'timezone': 1})
-    return user.get('timezone', 'UTC') if user else 'UTC'
+    timezone_str = user.get('timezone', 'UTC') if user else 'UTC'
+    
+    # Update cache
+    _timezone_cache[user_id] = (timezone_str, time.time())
+    return timezone_str
 
 def get_utc_now():
     """Get current UTC time with timezone info"""
@@ -151,7 +178,8 @@ def convert_to_user_timezone(dt, user_timezone='UTC'):
     try:
         tz = pytz.timezone(user_timezone)
         return dt.astimezone(tz)
-    except:
+    except (pytz.exceptions.UnknownTimeZoneError, AttributeError):
+        # Invalid timezone - fall back to UTC
         return dt.astimezone(pytz.UTC)
 
 def convert_to_utc(dt, user_timezone='UTC'):
@@ -168,7 +196,8 @@ def convert_to_utc(dt, user_timezone='UTC'):
             dt = tz.localize(dt)
         # Convert to UTC
         return dt.astimezone(timezone.utc)
-    except:
+    except (pytz.exceptions.UnknownTimeZoneError, AttributeError, ValueError):
+        # Invalid timezone or datetime - return as-is or try to parse
         return dt if isinstance(dt, datetime) else datetime.fromisoformat(dt)
 
 def serialize_doc(doc):
@@ -208,22 +237,26 @@ def handle_db_errors(f):
             return jsonify({'error': 'Database timeout', 'success': False}), 504
         except Exception as e:
             logger.error(f"❌ Error in {f.__name__}: {str(e)}", exc_info=True)
-            return jsonify({'error': str(e), 'success': False}), 500
+            # Don't expose internal errors to frontend (security)
+            return jsonify({'error': 'Internal server error', 'success': False}), 500
     
     return decorated_function
 
 # ============== HEALTH CHECK ENDPOINTS ==============
 @app.route('/health', methods=['GET'])
+@limiter.limit("300 per hour")  # Health checks can be frequent for monitoring
 def health():
     """Check if backend is live"""
     return jsonify({'status': 'ok', 'message': 'Backend is live'}), 200
 
 @app.route('/api/health', methods=['GET'])
+@limiter.limit("300 per hour")
 def api_health():
     """Check if backend API is live"""
     return jsonify({'status': 'ok', 'message': 'Backend API is live'}), 200
 
 @app.route('/api/database-check', methods=['GET'])
+@limiter.limit("60 per hour")  # Stricter limit for database checks
 def database_check():
     """Check if database is working properly with detailed diagnostics"""
     try:
@@ -242,13 +275,13 @@ def database_check():
         # Count documents in collections
         users_count = db.users.estimated_document_count()  # Faster than count_documents
         
-        # Check indexes
+        # Check indexes (optimize: don't load full list in memory)
         indexes_info = {
-            'tags': len(list(db.tags.list_indexes())),
-            'monthly_goals': len(list(db.monthly_goals.list_indexes())),
-            'weekly_goals': len(list(db.weekly_goals.list_indexes())),
-            'daily_goals': len(list(db.daily_goals.list_indexes())),
-            'habits': len(list(db.habits.list_indexes()))
+            'tags': sum(1 for _ in db.tags.list_indexes()),
+            'monthly_goals': sum(1 for _ in db.monthly_goals.list_indexes()),
+            'weekly_goals': sum(1 for _ in db.weekly_goals.list_indexes()),
+            'daily_goals': sum(1 for _ in db.daily_goals.list_indexes()),
+            'habits': sum(1 for _ in db.habits.list_indexes())
         }
         
         return jsonify({
@@ -275,6 +308,7 @@ def database_check():
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
 
 @app.route('/api/auth/google', methods=['POST'])
+@limiter.limit("10 per minute")  # Strict limit on auth endpoint to prevent brute force/DoS
 @handle_db_errors
 def google_auth():
     """Verify Google ID token and authenticate user"""
@@ -372,10 +406,12 @@ def google_auth():
         return jsonify({'success': False, 'message': 'Invalid token'}), 401
     except Exception as e:
         logger.error(f"Google auth error: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        # Don't expose internal error details (security)
+        return jsonify({'success': False, 'message': 'Authentication failed'}), 500
 
 # ============== USER ENDPOINTS ==============
 @app.route('/api/user/<user_id>/timezone', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_user_timezone(user_id):
     """Update user's timezone from geolocation"""
@@ -411,16 +447,21 @@ def update_user_timezone(user_id):
 
 # ============== TAGS ENDPOINTS ==============
 @app.route('/api/tags/<user_id>', methods=['GET'])
+@limiter.limit("100 per minute")  # Read operations: 100 per minute per IP
 @handle_db_errors
 def get_tags(user_id):
-    # Uses index: userId + createdAt
-    tags = list(db.tags.find(
-        {'userId': user_id}
-    ).sort('createdAt', DESCENDING).limit(1000))  # Add reasonable limit
+    # Pagination to prevent RAM bloat - uses index: userId + createdAt
+    page = max(1, request.args.get('page', 1, type=int))
+    limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
+    skip = (page - 1) * limit
     
-    return jsonify([serialize_doc(tag) for tag in tags]), 200
+    tags = list(db.tags.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
+    total = db.tags.count_documents({'userId': user_id})
+    
+    return jsonify({'tags': [serialize_doc(tag) for tag in tags], 'page': page, 'limit': limit, 'total': total}), 200
 
 @app.route('/api/tags', methods=['POST'])
+@limiter.limit("30 per minute")  # Write operations: stricter limit to prevent spam
 @handle_db_errors
 def create_tag():
     data = request.json
@@ -441,6 +482,7 @@ def create_tag():
     return jsonify(serialize_doc(new_tag)), 201
 
 @app.route('/api/tags/<tag_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_tag(tag_id):
     data = request.json
@@ -470,6 +512,7 @@ def update_tag(tag_id):
     return jsonify({'error': 'Tag not found', 'success': False}), 404
 
 @app.route('/api/tags/<tag_id>', methods=['DELETE'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def delete_tag(tag_id):
     if not ObjectId.is_valid(tag_id):
@@ -484,16 +527,21 @@ def delete_tag(tag_id):
 
 # ============== MONTHLY GOALS ENDPOINTS ==============
 @app.route('/api/goals/monthly/<user_id>', methods=['GET'])
+@limiter.limit("100 per minute")
 @handle_db_errors
 def get_monthly_goals(user_id):
-    # Uses index: userId + createdAt
-    goals = list(db.monthly_goals.find(
-        {'userId': user_id}
-    ).sort('createdAt', DESCENDING).limit(1000))
+    # Pagination to prevent RAM bloat - uses index: userId + createdAt
+    page = max(1, request.args.get('page', 1, type=int))
+    limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
+    skip = (page - 1) * limit
     
-    return jsonify([serialize_doc(goal) for goal in goals]), 200
+    goals = list(db.monthly_goals.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
+    total = db.monthly_goals.count_documents({'userId': user_id})
+    
+    return jsonify({'goals': [serialize_doc(goal) for goal in goals], 'page': page, 'limit': limit, 'total': total}), 200
 
 @app.route('/api/goals/monthly', methods=['POST'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def create_monthly_goal():
     data = request.json
@@ -517,6 +565,7 @@ def create_monthly_goal():
     return jsonify(serialize_doc(new_goal)), 201
 
 @app.route('/api/goals/monthly/<goal_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_monthly_goal(goal_id):
     data = request.json
@@ -568,6 +617,7 @@ def update_monthly_goal(goal_id):
     return jsonify({'error': 'Goal not found', 'success': False}), 404
 
 @app.route('/api/goals/monthly/<goal_id>', methods=['DELETE'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def delete_monthly_goal(goal_id):
     if not ObjectId.is_valid(goal_id):
@@ -582,16 +632,21 @@ def delete_monthly_goal(goal_id):
 
 # ============== WEEKLY GOALS ENDPOINTS ==============
 @app.route('/api/goals/weekly/<user_id>', methods=['GET'])
+@limiter.limit("100 per minute")
 @handle_db_errors
 def get_weekly_goals(user_id):
-    # Uses index: userId + createdAt
-    goals = list(db.weekly_goals.find(
-        {'userId': user_id}
-    ).sort('createdAt', DESCENDING).limit(1000))
+    # Pagination to prevent RAM bloat - uses index: userId + createdAt
+    page = max(1, request.args.get('page', 1, type=int))
+    limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
+    skip = (page - 1) * limit
     
-    return jsonify([serialize_doc(goal) for goal in goals]), 200
+    goals = list(db.weekly_goals.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
+    total = db.weekly_goals.count_documents({'userId': user_id})
+    
+    return jsonify({'goals': [serialize_doc(goal) for goal in goals], 'page': page, 'limit': limit, 'total': total}), 200
 
 @app.route('/api/goals/weekly', methods=['POST'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def create_weekly_goal():
     data = request.json
@@ -624,6 +679,7 @@ def create_weekly_goal():
     return jsonify(serialize_doc(new_goal)), 201
 
 @app.route('/api/goals/weekly/<goal_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_weekly_goal(goal_id):
     data = request.json
@@ -668,6 +724,7 @@ def update_weekly_goal(goal_id):
     return jsonify({'error': 'Goal not found', 'success': False}), 404
 
 @app.route('/api/goals/weekly/<goal_id>', methods=['DELETE'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def delete_weekly_goal(goal_id):
     if not ObjectId.is_valid(goal_id):
@@ -682,16 +739,21 @@ def delete_weekly_goal(goal_id):
 
 # ============== DAILY GOALS ENDPOINTS ==============
 @app.route('/api/goals/daily/<user_id>', methods=['GET'])
+@limiter.limit("100 per minute")
 @handle_db_errors
 def get_daily_goals(user_id):
-    # Uses index: userId + createdAt
-    goals = list(db.daily_goals.find(
-        {'userId': user_id}
-    ).sort('createdAt', DESCENDING).limit(1000))
+    # Pagination to prevent RAM bloat - uses index: userId + createdAt
+    page = max(1, request.args.get('page', 1, type=int))
+    limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
+    skip = (page - 1) * limit
     
-    return jsonify([serialize_doc(goal) for goal in goals]), 200
+    goals = list(db.daily_goals.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
+    total = db.daily_goals.count_documents({'userId': user_id})
+    
+    return jsonify({'goals': [serialize_doc(goal) for goal in goals], 'page': page, 'limit': limit, 'total': total}), 200
 
 @app.route('/api/goals/daily', methods=['POST'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def create_daily_goal():
     data = request.json
@@ -721,6 +783,7 @@ def create_daily_goal():
     return jsonify(serialize_doc(new_goal)), 201
 
 @app.route('/api/goals/daily/<goal_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_daily_goal(goal_id):
     data = request.json
@@ -752,6 +815,7 @@ def update_daily_goal(goal_id):
     return jsonify({'error': 'Goal not found', 'success': False}), 404
 
 @app.route('/api/goals/daily/<goal_id>', methods=['DELETE'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def delete_daily_goal(goal_id):
     if not ObjectId.is_valid(goal_id):
@@ -766,16 +830,21 @@ def delete_daily_goal(goal_id):
 
 # ============== HABITS ENDPOINTS ==============
 @app.route('/api/habits/<user_id>', methods=['GET'])
+@limiter.limit("100 per minute")
 @handle_db_errors
 def get_habits(user_id):
-    # Uses index: userId + createdAt
-    habits = list(db.habits.find(
-        {'userId': user_id}
-    ).sort('createdAt', DESCENDING).limit(1000))
+    # Pagination to prevent RAM bloat - uses index: userId + createdAt
+    page = max(1, request.args.get('page', 1, type=int))
+    limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
+    skip = (page - 1) * limit
     
-    return jsonify([serialize_doc(habit) for habit in habits]), 200
+    habits = list(db.habits.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
+    total = db.habits.count_documents({'userId': user_id})
+    
+    return jsonify({'habits': [serialize_doc(habit) for habit in habits], 'page': page, 'limit': limit, 'total': total}), 200
 
 @app.route('/api/habits', methods=['POST'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def create_habit():
     data = request.json
@@ -798,6 +867,7 @@ def create_habit():
     return jsonify(serialize_doc(new_habit)), 201
 
 @app.route('/api/habits/<habit_id>', methods=['PUT'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def update_habit(habit_id):
     data = request.json
@@ -827,6 +897,7 @@ def update_habit(habit_id):
     return jsonify({'error': 'Habit not found', 'success': False}), 404
 
 @app.route('/api/habits/<habit_id>/toggle/<date>', methods=['POST'])
+@limiter.limit("60 per minute")
 @handle_db_errors
 def toggle_habit(habit_id, date):
     if not ObjectId.is_valid(habit_id):
@@ -888,6 +959,7 @@ def toggle_habit(habit_id, date):
     return jsonify(serialize_doc(result)), 200
 
 @app.route('/api/habits/<habit_id>', methods=['DELETE'])
+@limiter.limit("30 per minute")
 @handle_db_errors
 def delete_habit(habit_id):
     if not ObjectId.is_valid(habit_id):
@@ -902,6 +974,7 @@ def delete_habit(habit_id):
 
 # ============== STATS ENDPOINT ==============
 @app.route('/api/habits/<habit_id>/stats', methods=['GET'])
+@limiter.limit("100 per minute")
 @handle_db_errors
 def get_habit_stats(habit_id):
     if not ObjectId.is_valid(habit_id):
@@ -935,5 +1008,16 @@ def internal_error(error):
     logger.error(f"Internal server error: {error}")
     return jsonify({'error': 'Internal server error', 'success': False}), 500
 
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors"""
+    logger.warning(f"Rate limit exceeded: {request.remote_addr} - {request.path}")
+    return jsonify({
+        'success': False,
+        'error': 'Rate limit exceeded',
+        'message': 'Too many requests. Please try again later.'
+    }), 429
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # IMPORTANT: For production, use gunicorn with: gunicorn -w 4 -b 0.0.0.0:5000 app:app
+    app.run(debug=False, host='0.0.0.0', port=5000, threaded=True)

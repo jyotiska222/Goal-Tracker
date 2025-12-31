@@ -259,11 +259,27 @@ const GoalTrackerApp = () => {
         fetch(`${API_BASE}/habits/${currentUser.id}`)
       ]);
 
-      if (tagsRes.ok) setTags(await tagsRes.json());
-      if (monthlyRes.ok) setMonthlyGoals(await monthlyRes.json());
-      if (weeklyRes.ok) setWeeklyGoals(await weeklyRes.json());
-      if (dailyRes.ok) setDailyGoals(await dailyRes.json());
-      if (habitsRes.ok) setHabits(await habitsRes.json());
+      // Backend now returns paginated objects with { tags: [], page, limit, total }
+      if (tagsRes.ok) {
+        const data = await tagsRes.json();
+        setTags(data.tags || []);
+      }
+      if (monthlyRes.ok) {
+        const data = await monthlyRes.json();
+        setMonthlyGoals(data.goals || []);
+      }
+      if (weeklyRes.ok) {
+        const data = await weeklyRes.json();
+        setWeeklyGoals(data.goals || []);
+      }
+      if (dailyRes.ok) {
+        const data = await dailyRes.json();
+        setDailyGoals(data.goals || []);
+      }
+      if (habitsRes.ok) {
+        const data = await habitsRes.json();
+        setHabits(data.habits || []);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {

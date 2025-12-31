@@ -117,7 +117,7 @@ const WeatherBox = ({ weather, getWeatherEmoji, isMobile = false }) => {
 
   return (
     <div className={`flex items-center gap-3 ${isMobile ? 'px-4 py-3 w-full rounded-xl' : 'px-4 py-3 rounded-lg h-[56px] min-w-[140px]'} bg-gradient-to-br from-blue-500/10 via-cyan-500/10 to-blue-600/10 border border-blue-500/20 hover:border-blue-500/40 hover:bg-blue-500/15 transition-all cursor-pointer group`}>
-      <div className={`${isMobile ? 'text-3xl' : 'text-2xl'} group-hover:scale-110 transition-transform flex-shrink-0`}>{getWeatherEmoji(weather.weatherCode)}</div>
+      <div className={`${isMobile ? 'text-3xl' : 'text-2xl'} group-hover:scale-120 transition-transform flex-shrink-0`}>{getWeatherEmoji(weather.weatherCode)}</div>
       <div className="flex flex-col flex-1 justify-center min-w-0">
         <span className="text-[9px] text-gray-500 font-small tracking-wide leading-tight">Weather</span>
         <span className={`${isMobile ? 'text-lg' : 'text-base'} font-bold text-blue-400 leading-tight`}>{weather.temp}°C</span>
@@ -160,7 +160,7 @@ const DateTimeBox = ({ timezone, currentTime, isMobile = false }) => {
 
   return (
     <div className={`flex items-center gap-3 ${isMobile ? 'px-4 py-3 w-full rounded-xl' : 'px-4 py-3 rounded-lg h-[56px] min-w-[160px]'} bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-purple-600/10 border border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-500/15 transition-all cursor-pointer group`}>
-      <div className="group-hover:scale-115 transition-transform duration-300">
+      <div className="group-hover:scale-110 transition-transform duration-300">
         <AnalogClock size="lg" />
       </div>
       <div className="flex flex-col flex-1 justify-center min-w-0">
