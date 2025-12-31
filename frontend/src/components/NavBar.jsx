@@ -1,6 +1,109 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Cloud, LogOut, Menu, X, User, Mail, MapPin, GoalIcon } from 'lucide-react';
 
+// Analog Clock Component
+const AnalogClock = ({ size = 'sm' }) => {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const hours = time.getHours() % 12;
+  const minutes = time.getMinutes();
+  const seconds = time.getSeconds();
+
+  const hourDegrees = (hours * 30) + (minutes * 0.5);
+  const minuteDegrees = (minutes * 6) + (seconds * 0.1);
+  const secondDegrees = seconds * 6;
+
+  const sizeClass = size === 'lg' ? 'w-8 h-8' : 'w-7 h-7';
+
+  return (
+    <svg className={`${sizeClass} flex-shrink-0`} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="clockGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#a78bfa" />
+          <stop offset="100%" stopColor="#c084fc" />
+        </linearGradient>
+      </defs>
+      
+      {/* Clock face background */}
+      <circle cx="50" cy="50" r="48" fill="url(#clockGradient)" opacity="0.15"/>
+      
+      {/* Clock face border */}
+      <circle cx="50" cy="50" r="48" fill="none" stroke="#a78bfa" strokeWidth="3"/>
+      
+      {/* Hour markers - colorful */}
+      {[...Array(12)].map((_, i) => {
+        const angle = (i * 30 - 90) * (Math.PI / 180);
+        const x1 = 50 + 40 * Math.cos(angle);
+        const y1 = 50 + 40 * Math.sin(angle);
+        const x2 = 50 + 47 * Math.cos(angle);
+        const y2 = 50 + 47 * Math.sin(angle);
+        
+        // Alternate colors for every 3 hours
+        const colors = ['#c084fc', '#a78bfa', '#f97316'];
+        const color = colors[Math.floor(i / 4) % 3];
+        
+        return (
+          <line 
+            key={i} 
+            x1={x1} 
+            y1={y1} 
+            x2={x2} 
+            y2={y2} 
+            stroke={color} 
+            strokeWidth="2.5"
+            strokeLinecap="round"
+          />
+        );
+      })}
+
+      {/* Center dot - colorful */}
+      <circle cx="50" cy="50" r="3.5" fill="#c084fc"/>
+      <circle cx="50" cy="50" r="2" fill="#a78bfa"/>
+
+      {/* Hour hand - bold and colorful */}
+      <line
+        x1="50"
+        y1="50"
+        x2={50 + 18 * Math.sin((hourDegrees * Math.PI) / 180)}
+        y2={50 - 18 * Math.cos((hourDegrees * Math.PI) / 180)}
+        stroke="#c084fc"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+      />
+
+      {/* Minute hand - bold and colorful */}
+      <line
+        x1="50"
+        y1="50"
+        x2={50 + 28 * Math.sin((minuteDegrees * Math.PI) / 180)}
+        y2={50 - 28 * Math.cos((minuteDegrees * Math.PI) / 180)}
+        stroke="#a78bfa"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+
+      {/* Second hand - bold and vibrant */}
+      <line
+        x1="50"
+        y1="50"
+        x2={50 + 33 * Math.sin((secondDegrees * Math.PI) / 180)}
+        y2={50 - 33 * Math.cos((secondDegrees * Math.PI) / 180)}
+        stroke="#f97316"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+};
+
 // Weather Box Component
 const WeatherBox = ({ weather, getWeatherEmoji, isMobile = false }) => {
   if (!weather) {
@@ -27,6 +130,7 @@ const WeatherBox = ({ weather, getWeatherEmoji, isMobile = false }) => {
 // DateTime Box Component
 const DateTimeBox = ({ timezone, currentTime, isMobile = false }) => {
   const [timeDisplay, setTimeDisplay] = useState('');
+  const [dateDisplay, setDateDisplay] = useState('');
 
   useEffect(() => {
     const updateDateTime = () => {
@@ -35,11 +139,18 @@ const DateTimeBox = ({ timezone, currentTime, isMobile = false }) => {
       const time = now.toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit',
-        second: isMobile ? '2-digit' : undefined,
+        second: '2-digit',
         hour12: true 
       });
 
+      const date = now.toLocaleDateString('en-US', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+
       setTimeDisplay(time);
+      setDateDisplay(date);
     };
 
     updateDateTime();
@@ -49,11 +160,14 @@ const DateTimeBox = ({ timezone, currentTime, isMobile = false }) => {
 
   return (
     <div className={`flex items-center gap-3 ${isMobile ? 'px-4 py-3 w-full rounded-xl' : 'px-4 py-3 rounded-lg h-[56px] min-w-[160px]'} bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-purple-600/10 border border-purple-500/20 hover:border-purple-500/40 hover:bg-purple-500/15 transition-all cursor-pointer group`}>
-      <Clock className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'} text-purple-400 group-hover:rotate-12 transition-transform flex-shrink-0`} />
+      <div className="group-hover:scale-115 transition-transform duration-300">
+        <AnalogClock size="lg" />
+      </div>
       <div className="flex flex-col flex-1 justify-center min-w-0">
-        <span className="text-[9px] text-gray-500 font-small tracking-wide leading-tight">Time & Zone</span>
+        <span className="text-[9px] text-gray-500 font-small tracking-wide leading-tight">Date & Time</span>
         <span className={`${isMobile ? 'text-lg' : 'text-base'} font-bold text-purple-400 leading-tight whitespace-nowrap`}>{timeDisplay}</span>
-        <span className="text-[10px] text-gray-400 leading-tight whitespace-nowrap">{timezone}</span>
+        <span className="text-[10px] text-gray-400 leading-tight whitespace-nowrap">{dateDisplay}</span>
+        {/* <span className="text-[10px] text-gray-400 leading-tight whitespace-nowrap">{timezone}</span> */}
       </div>
     </div>
   );
