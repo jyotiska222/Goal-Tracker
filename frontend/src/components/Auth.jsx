@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { Calendar, Star, TrendingUp, Target, GoalIcon } from 'lucide-react';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { useToast } from '../context/ToastContext';
@@ -10,12 +10,14 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '768350337530-
 // Inner component that uses the hook - must be inside GoogleOAuthProvider
 const AuthContent = ({ isLoading, onLoginSuccess }) => {
   const { showToast, updateToast } = useToast();
-  const googleLoginRef = useRef(null);
-  const customButtonRef = useRef(null);
+  const toastIdRef = useRef(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const googleButtonRef = useRef(null);
 
-  // Google OAuth Handler
+  // Handle successful authentication with the backend
   const handleGoogleSuccess = async (credentialResponse) => {
-    const { id } = showToast('Signing in with Google...', { type: 'loading' });
+    setIsAuthLoading(true);
+    toastIdRef.current = showToast('Signing in with Google...', { type: 'loading' }).id;
 
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -36,14 +38,14 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
       const data = await response.json();
 
       if (data.success) {
-        updateToast(id, {
+        updateToast(toastIdRef.current, {
           type: 'success',
           message: 'Signed in successfully!',
           duration: 2000
         });
         onLoginSuccess(data.user);
       } else {
-        updateToast(id, {
+        updateToast(toastIdRef.current, {
           type: 'error',
           message: data.message || 'Sign in failed',
           duration: 3000
@@ -51,11 +53,13 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
       }
     } catch (error) {
       console.error('Google login error:', error);
-      updateToast(id, {
+      updateToast(toastIdRef.current, {
         type: 'error',
         message: 'Sign in error: ' + error.message,
         duration: 4000
       });
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -63,16 +67,12 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
     showToast('Google sign-in failed', { type: 'error', duration: 3000 });
   };
 
-  const handleButtonClick = () => {
-    // Try to find and click the Google button
-    const googleButton = googleLoginRef.current?.querySelector('[role="button"]') || 
-                        googleLoginRef.current?.querySelector('button') ||
-                        googleLoginRef.current?.querySelector('div[role="button"]');
-    
-    if (googleButton) {
-      googleButton.click();
-    } else {
-      console.warn('Google button not found');
+  const triggerGoogleLogin = () => {
+    if (googleButtonRef.current) {
+      const button = googleButtonRef.current.querySelector('[role="button"]');
+      if (button) {
+        button.click();
+      }
     }
   };
 
@@ -115,12 +115,21 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
               </div>
 
               {/* Google Login Button */}
-              <div className="mb-6 relative">
-                {/* Custom styled Google button matching app theme */}
+              <div className="mb-6">
+                {/* Hidden Google Login component - used to get the credential */}
+                <div ref={googleButtonRef} className="hidden">
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    text="signin"
+                    size="large"
+                  />
+                </div>
+                
+                {/* Custom styled button overlay */}
                 <button
-                  ref={customButtonRef}
-                  onClick={handleButtonClick}
-                  disabled={isLoading}
+                  onClick={triggerGoogleLogin}
+                  disabled={isLoading || isAuthLoading}
                   className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-lg transition-all duration-300 flex items-center justify-center gap-3 group shadow-lg hover:shadow-xl hover:shadow-blue-500/20 relative z-10"
                 >
                   {/* Google Icon SVG */}
@@ -130,21 +139,8 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="currentColor"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="currentColor"/>
                   </svg>
-                  <span>{isLoading ? 'Signing in...' : 'Continue with Google'}</span>
+                  <span>{isLoading || isAuthLoading ? 'Signing in...' : 'Continue with Google'}</span>
                 </button>
-
-                {/* Hidden Google Login component - positioned absolutely so button can find it */}
-                <div 
-                  ref={googleLoginRef}
-                  className="absolute inset-0 pointer-events-none opacity-0"
-                >
-                  <GoogleLogin
-                    onSuccess={handleGoogleSuccess}
-                    onError={handleGoogleError}
-                    text="signin_with"
-                    size="large"
-                  />
-                </div>
               </div>
 
               {/* Bottom text */}
