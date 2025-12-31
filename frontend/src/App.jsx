@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Check, X, Edit2, Trash2, Tag, BarChart3, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from './context/ToastContext';
+import Auth from './components/Auth';
+import NavBar from './components/NavBar';
 import { executeWithToast, toastConfigs } from './utils/toastConfigs';
 import { getUserTimezone, formatDateLocal, getTodayLocal, getLocalTime, isTodayLocal } from './utils/timezoneHelper';
 import { FiLogOut } from "react-icons/fi";
@@ -18,7 +20,6 @@ const GoalTrackerApp = () => {
   
   const [currentUser, setCurrentUser] = useState(null);
   const [showAuth, setShowAuth] = useState(true);
-  const [isLogin, setIsLogin] = useState(true);
   const [isAuthChecking, setIsAuthChecking] = useState(true);  // Always checking initially
   const [isLoading, setIsLoading] = useState(false);
   
@@ -42,10 +43,14 @@ const GoalTrackerApp = () => {
   const [editingTag, setEditingTag] = useState(null);
   const [editingHabit, setEditingHabit] = useState(null);
   
-  const [authForm, setAuthForm] = useState({ username: '', password: '' });
   const [tagForm, setTagForm] = useState({ name: '', color: '#3b82f6' });
   const [goalForm, setGoalForm] = useState({ title: '', tagId: '', parentId: '' });
   const [habitForm, setHabitForm] = useState({ name: '', tagId: '' });
+
+
+// 1234
+  const [showStartupLoader, setShowStartupLoader] = useState(true);
+
 
   const [systemStatus, setSystemStatus] = useState({
     backendLive: false,
@@ -185,6 +190,15 @@ const GoalTrackerApp = () => {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+  const timer = setTimeout(() => {
+    setShowStartupLoader(false);
+  }, 2000); // 2 seconds splash loader
+
+  return () => clearTimeout(timer);
+}, []);
+
+
   // Validate and restore user session on mount
   useEffect(() => {
     const restoreSession = async () => {
@@ -257,46 +271,7 @@ const GoalTrackerApp = () => {
     }
   };
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
-    const { id } = showToast('Authenticating...', { type: 'loading' });
-    
-    try {
-      const endpoint = isLogin ? '/auth/login' : '/auth/signup';
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(authForm)
-      });
-      
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      
-      if (data.success) {
-        updateToast(id, {
-          type: 'success',
-          message: isLogin ? 'Login successful!' : 'Account created successfully!',
-          duration: 2000
-        });
-        setCurrentUser(data.user);
-        localStorage.setItem('goalTrackerUser', JSON.stringify(data.user));
-        setShowAuth(false);
-        setAuthForm({ username: '', password: '' });
-      } else {
-        updateToast(id, {
-          type: 'error',
-          message: data.message || 'Authentication failed',
-          duration: 3000
-        });
-      }
-    } catch (error) {
-      updateToast(id, {
-        type: 'error',
-        message: 'Authentication error: ' + error.message,
-        duration: 4000
-      });
-    }
-  };
+
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -617,79 +592,14 @@ const handleToggleHabit = async (habitId, date) => {
 
   const isToday = (date) => isTodayLocal(date);
 
+  const handleGoogleLoginSuccess = (user) => {
+    setCurrentUser(user);
+    localStorage.setItem('goalTrackerUser', JSON.stringify(user));
+    setShowAuth(false);
+  };
+
   if (showAuth) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-950 via-blue-950 to-gray-950 flex items-center justify-center p-4">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-0 left-0 w-72 h-72 bg-blue-500/5 rounded-full blur-3xl"></div>
-        
-        <div className="relative bg-gray-900/90 backdrop-blur-xl rounded-2xl p-6 sm:p-8 w-full max-w-md border border-blue-500/20 shadow-2xl">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-2.5 bg-gradient-to-br from-blue-600/30 to-blue-700/20 rounded-xl">
-              <Calendar className="w-8 h-8 text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 via-blue-500 to-blue-600 bg-clip-text text-transparent">Goal Tracker</h1>
-              <p className="text-xs text-gray-400 mt-0.5">Achieve your goals with confidence</p>
-            </div>
-          </div>
-          
-          <div className="flex gap-2 mb-8 bg-gray-800/50 rounded-xl p-1.5">
-            <button
-              onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2.5 rounded-lg font-semibold transition-all text-sm ${
-                isLogin ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg' : 'text-gray-400'
-              }`}
-            >
-              Login
-            </button>
-            <button
-              onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2.5 rounded-lg font-semibold transition-all text-sm ${
-                !isLogin ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg' : 'text-gray-400'
-              }`}
-            >
-              Sign Up
-            </button>
-          </div>
-          
-          <form onSubmit={handleAuth} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Username</label>
-              <input
-                type="text"
-                value={authForm.username}
-                onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
-                className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm"
-                placeholder="Enter your username"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
-              <input
-                type="password"
-                value={authForm.password}
-                onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm"
-                placeholder="Enter your password"
-                required
-              />
-            </div>
-            <button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3.5 rounded-xl font-semibold shadow-lg">
-              {isLogin ? 'Login' : 'Create Account'}
-            </button>
-          </form>
-          
-          <p className="text-center text-gray-400 text-sm mt-6">
-            {isLogin ? "Don't have an account? " : 'Already have an account? '}
-            <button onClick={() => setIsLogin(!isLogin)} className="text-blue-400 hover:text-blue-300 font-semibold">
-              {isLogin ? 'Sign Up' : 'Login'}
-            </button>
-          </p>
-        </div>
-      </div>
-    );
+    return <Auth isLoading={isLoading} onLoginSuccess={handleGoogleLoginSuccess} />;
   }
 
   const GoalSection = ({ title, goals, type, onAdd, onEdit, onDelete, onToggle }) => (
@@ -705,43 +615,47 @@ const handleToggleHabit = async (habitId, date) => {
       ) : (
         <div className="space-y-2">
           {goals.map(goal => (
-            <div key={goal.id} className={`bg-gray-800/50 rounded-lg p-2.5 flex items-start gap-2 ${goal.completed ? 'opacity-60' : ''}`}>
-              <input 
-                type="checkbox" 
-                className="rounded mt-0.5 cursor-pointer accent-blue-600" 
-                checked={goal.completed}
-                onChange={() => onToggle(goal.id, goal.completed)}
-              />
+            <div key={goal.id} className={`bg-gray-800/50 hover:bg-gray-800/70 rounded-lg p-3 flex items-center gap-3 transition-colors ${goal.completed ? 'opacity-60' : ''}`}>
+              <button
+                onClick={() => onToggle(goal.id, goal.completed)}
+                className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
+                  goal.completed
+                    ? 'bg-gradient-to-br from-green-600 to-green-700'
+                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                {goal.completed && <Check className="w-3.5 h-3.5 text-white" />}
+              </button>
               <div className="flex-1 min-w-0">
-                <div className={`text-sm ${goal.completed ? 'line-through text-gray-500' : 'text-gray-200'}`}>
+                <div className={`text-base font-semibold ${goal.completed ? 'line-through text-gray-500' : 'text-gray-200'}`}>
                   {goal.title}
                 </div>
                 <div className="flex gap-1 mt-1.5 flex-wrap">
                   {type === 'monthly' && (
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-blue-600/80 text-white">
+                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-blue-600/80 text-white">
                       {getMonthName(goal.month)}
                     </span>
                   )}
                   {type === 'weekly' && (
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-purple-600/80 text-white">
+                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-purple-600/80 text-white">
                       Week {goal.weekNumber}
                     </span>
                   )}
                   {type === 'daily' && (
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-green-600/80 text-white">
+                    <span className="text-[11px] px-2 py-0.5 rounded-md bg-green-600/80 text-white">
                       {formatDateLabel(goal.date)}
                     </span>
                   )}
-                  <span className="text-xs px-2 py-0.5 rounded-md text-white" style={{ backgroundColor: getTagColor(goal.tagId) }}>
+                  <span className="text-[11px] px-2 py-0.5 rounded-md text-white" style={{ backgroundColor: getTagColor(goal.tagId) }}>
                     {getTagName(goal.tagId)}
                   </span>
                 </div>
               </div>
-              <div className="flex gap-1">
-                <button onClick={() => onEdit(goal)} className="p-1.5 hover:bg-blue-600/20 rounded-lg">
+              <div className="flex gap-1 flex-shrink-0">
+                <button onClick={() => onEdit(goal)} className="p-1.5 hover:bg-blue-600/20 rounded-lg transition-colors">
                   <Edit2 className="w-3.5 h-3.5 text-blue-400" />
                 </button>
-                <button onClick={() => onDelete(goal.id)} className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400">
+                <button onClick={() => onDelete(goal.id)} className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400 transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -755,7 +669,7 @@ const handleToggleHabit = async (habitId, date) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
       {/* Loading Screen */}
-      {isLoading && (
+      {(showStartupLoader || isLoading) && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[999]">
           <div className="flex flex-col items-center gap-4">
 
@@ -764,8 +678,11 @@ const handleToggleHabit = async (habitId, date) => {
 
             {/* Text */}
             <p className="text-sm text-gray-300">
-              Loading your goals...
+              {showStartupLoader
+                ? 'Preparing your dashboard...'
+                : 'Loading your goals...'}
             </p>
+
 
           </div>
         </div>
@@ -774,50 +691,14 @@ const handleToggleHabit = async (habitId, date) => {
       )}
 
       {/* Header */}
-      <div className="bg-gradient-to-r from-gray-900/95 via-gray-900/90 to-gray-900/95 border-b border-blue-500/20 backdrop-blur-xl p-3 sm:p-4 sticky top-0 z-50 shadow-xl">
-        <div className="w-full flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="p-2 bg-gradient-to-br from-blue-600/30 to-blue-700/20 rounded-xl">
-              <Calendar className="w-5 sm:w-6 h-5 sm:h-6 text-blue-400" />
-            </div>
-            <h1 className="text-base sm:text-xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">Goal Tracker</h1>
-          </div>
-          
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-full bg-gray-800/60 border border-blue-500/20 text-xs">
-              <div className={`w-2 h-2 rounded-full animate-pulse ${systemStatus.changesSaved ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className="text-gray-300">{systemStatus.changesSaved ? 'Online' : 'Offline'}</span>
-            </div>
-
-            {weather && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-gradient-to-br from-blue-900/40 to-gray-800/40 border border-blue-500/20">
-                <div className="text-xl">{getWeatherEmoji(weather.weatherCode)}</div>
-                <div className="flex flex-col">
-                  <div className="font-bold text-blue-300 text-sm">{weather.temp}°C</div>
-                  <div className="text-gray-400 text-xs">{weather.minTemp}° - {weather.maxTemp}°</div>
-                </div>
-              </div>
-            )}
-            
-            <div className="flex flex-col items-end">
-              <div className="font-bold bg-gradient-to-r from-blue-400 to-blue-300 bg-clip-text text-transparent text-sm">
-                {getLocalTime(currentTime)}
-                <div className="from-blue-400 to-blue-300 text-[7px] hidden sm:block text-right">
-                  ({currentUser.timezone || 'UTC'})
-                </div>
-              </div>
-              <div className="text-gray-400 text-xs hidden sm:block">Hi, {currentUser.username}</div>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="bg-gradient-to-r from-red-600 to-red-700 p-2 rounded-xl hover:scale-105 transition"
-            >
-              <FiLogOut className="text-white w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-        </div>
-      </div>
+      <NavBar 
+        systemStatus={systemStatus} 
+        weather={weather} 
+        getWeatherEmoji={getWeatherEmoji} 
+        currentUser={currentUser} 
+        currentTime={currentTime} 
+        handleLogout={handleLogout} 
+      />
 
       {/* Mobile View - Stacked Components */}
       <div className="lg:hidden px-3 py-4 space-y-4">
