@@ -47,6 +47,8 @@ const GoalTrackerApp = () => {
   const [goalForm, setGoalForm] = useState({ title: '', tagId: '', parentId: '' });
   const [habitForm, setHabitForm] = useState({ name: '', tagId: '' });
 
+  // Drag and drop state
+  const [draggedGoal, setDraggedGoal] = useState(null);
 
 // 1234
   const [showStartupLoader, setShowStartupLoader] = useState(true);
@@ -449,6 +451,67 @@ const GoalTrackerApp = () => {
     );
   };
 
+  const handleDragStartGoal = (e, goal) => {
+    // Only allow dragging uncompleted daily goals
+    if (goal.completed) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedGoal({ ...goal, type: 'daily' });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOverDay = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDropGoal = async (e, targetDate) => {
+    e.preventDefault();
+    
+    if (!draggedGoal) return;
+    
+    // Only allow dropping daily goals
+    if (draggedGoal.type !== 'daily') {
+      setDraggedGoal(null);
+      return;
+    }
+
+    // Don't allow dropping completed goals
+    if (draggedGoal.completed) {
+      setDraggedGoal(null);
+      return;
+    }
+
+    const newDateStr = formatDateLocal(targetDate);
+    const oldDateStr = draggedGoal.date;
+
+    // Don't update if dropping on the same date
+    if (oldDateStr === newDateStr) {
+      setDraggedGoal(null);
+      return;
+    }
+
+    const { success } = await executeWithToast(
+      async () => {
+        const response = await fetch(`${API_BASE}/goals/daily/${draggedGoal.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: newDateStr })
+        });
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to move goal');
+        }
+        await loadData();
+      },
+      { showToast, updateToast },
+      { ...toastConfigs.goal.update, message: 'Goal moved to new date' }
+    );
+
+    setDraggedGoal(null);
+  };
+
   const handleSaveHabit = async () => {
     if (!habitForm.name.trim()) {
       showToast('Habit name cannot be empty', { type: 'error', duration: 2000 });
@@ -682,6 +745,58 @@ const handleToggleHabit = async (habitId, date) => {
     </div>
   );
 
+  const CustomDropdown = ({ id, value, options, onChange, placeholder = "Select an option", displayKey = "name" }) => {
+    const selectedOption = options.find(opt => opt.id === value || opt.value === value);
+    const displayValue = selectedOption ? selectedOption[displayKey] : placeholder;
+
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setOpenDropdown(openDropdown === id ? null : id)}
+          className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm flex items-center justify-between hover:border-gray-600 transition-colors"
+        >
+          <span className={displayValue === placeholder ? 'text-gray-500' : 'text-white'}>
+            {displayValue}
+          </span>
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${openDropdown === id ? 'rotate-180' : ''}`} />
+        </button>
+
+        {openDropdown === id && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800/95 border border-gray-700/50 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto backdrop-blur-sm">
+            <div className="p-2">
+              {options.length === 0 ? (
+                <div className="px-4 py-3 text-gray-400 text-sm">No options available</div>
+              ) : (
+                options.map((option, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      onChange(option.id || option.value);
+                      setOpenDropdown(null);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                      (option.id || option.value) === value
+                        ? 'bg-blue-600/80 text-white'
+                        : 'text-gray-200 hover:bg-gray-700/60'
+                    }`}
+                  >
+                    {option.color && (
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: option.color }}
+                      />
+                    )}
+                    <span>{option[displayKey]}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 text-white">
       {/* Loading Screen */}
@@ -892,7 +1007,7 @@ const handleToggleHabit = async (habitId, date) => {
         />
 
         {/* Mobile Calendar */}
-        <div className="bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10">
+        <div className="bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10 select-none">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
               {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -901,7 +1016,7 @@ const handleToggleHabit = async (habitId, date) => {
               <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() - 1); setCurrentDate(d); }} className="p-2 bg-gray-800/60 rounded-lg">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-xs font-medium">
+              <button onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }} className="px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-xs font-medium">
                 Today
               </button>
               <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="p-2 bg-gray-800/60 rounded-lg">
@@ -927,7 +1042,11 @@ const handleToggleHabit = async (habitId, date) => {
                 <div
                   key={idx}
                   onClick={() => setSelectedDate(day)}
-                  className={`aspect-square p-1 rounded-lg border cursor-pointer ${
+                  onDragOver={handleDragOverDay}
+                  onDrop={(e) => handleDropGoal(e, day)}
+                  className={`aspect-square p-1 rounded-lg border cursor-pointer transition-all ${
+                    draggedGoal ? 'opacity-80' : 'opacity-100'
+                  } ${
                     dayIsToday ? 'border-blue-500 bg-blue-950/50' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gray-800/60' : 'border-gray-700/50 bg-gray-800/40'
                   }`}
                 >
@@ -1102,7 +1221,7 @@ const handleToggleHabit = async (habitId, date) => {
           </div>
 
           {/* Calendar */}
-          <div className="flex-1 bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10">
+          <div className="flex-1 bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10 select-none">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
                 {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
@@ -1111,7 +1230,7 @@ const handleToggleHabit = async (habitId, date) => {
                 <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() - 1); setCurrentDate(d); }} className="px-3 py-2 bg-gray-800/60 rounded-lg">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-sm font-medium">
+                <button onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }} className="px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-sm font-medium">
                   Today
                 </button>
                 <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="px-3 py-2 bg-gray-800/60 rounded-lg">
@@ -1169,7 +1288,11 @@ const handleToggleHabit = async (habitId, date) => {
                         <div
                           key={`${rowIdx}-${dayIdx}`}
                           onClick={() => setSelectedDate(day)}
-                          className={`min-h-24 p-2 rounded-lg border cursor-pointer overflow-y-auto ${
+                          onDragOver={handleDragOverDay}
+                          onDrop={(e) => handleDropGoal(e, day)}
+                          className={`min-h-24 p-2 rounded-lg border cursor-pointer overflow-y-auto transition-all ${
+                            draggedGoal ? 'opacity-80' : 'opacity-100'
+                          } ${
                             dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
                           }`}
                         >
@@ -1187,7 +1310,15 @@ const handleToggleHabit = async (habitId, date) => {
                           </div>
                           <div className="space-y-0.5">
                             {goalsForDay.slice(0, 8).map(goal => (
-                              <div key={goal.id} className={`text-xs px-1.5 py-1 rounded truncate ${goal.completed ? 'line-through opacity-50' : ''}`} style={{ backgroundColor: getTagColor(goal.tagId) }} title={goal.title}>
+                              <div 
+                                key={goal.id} 
+                                draggable={!goal.completed}
+                                onDragStart={(e) => handleDragStartGoal(e, goal)}
+                                onDragEnd={() => setDraggedGoal(null)}
+                                className={`text-xs px-1.5 py-1 rounded truncate cursor-move ${goal.completed ? 'line-through opacity-50 cursor-not-allowed' : 'hover:opacity-80'}`} 
+                                style={{ backgroundColor: getTagColor(goal.tagId) }} 
+                                title={goal.title}
+                              >
                                 {goal.title}
                               </div>
                             ))}
@@ -1238,23 +1369,32 @@ const handleToggleHabit = async (habitId, date) => {
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-2">Tag</label>
-                <select value={goalForm.tagId} onChange={(e) => setGoalForm({ ...goalForm, tagId: e.target.value })} className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm">
-                  <option value="">Select a tag</option>
-                  {tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-                </select>
+                <CustomDropdown
+                  id="goalTagDropdown"
+                  value={goalForm.tagId}
+                  options={[{ id: '', name: 'Select a tag' }, ...tags]}
+                  onChange={(value) => setGoalForm({ ...goalForm, tagId: value })}
+                  placeholder="Select a tag"
+                  displayKey="name"
+                />
               </div>
               {(goalType === 'weekly' || goalType === 'daily') && (
                 <div>
                   <label className="block text-sm text-gray-300 mb-2">Parent Goal (Optional)</label>
-                  <select value={goalForm.parentId} onChange={(e) => setGoalForm({ ...goalForm, parentId: e.target.value })} className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm">
-                    <option value="">Independent</option>
-                    {goalType === 'daily' && weeklyGoals.filter(g => g.weekNumber === getISOWeekNumber(selectedDate) && g.year === selectedDate.getFullYear()).map(goal => (
-                      <option key={goal.id} value={goal.id}>{goal.title} (Weekly)</option>
-                    ))}
-                    {goalType === 'weekly' && monthlyGoals.filter(g => g.month === selectedDate.getMonth() && g.year === selectedDate.getFullYear()).map(goal => (
-                      <option key={goal.id} value={goal.id}>{goal.title} (Monthly)</option>
-                    ))}
-                  </select>
+                  <CustomDropdown
+                    id="goalParentDropdown"
+                    value={goalForm.parentId}
+                    options={[
+                      { id: '', name: 'Independent' },
+                      ...(goalType === 'daily' 
+                        ? weeklyGoals.filter(g => g.weekNumber === getISOWeekNumber(selectedDate) && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Weekly)` }))
+                        : monthlyGoals.filter(g => g.month === selectedDate.getMonth() && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Monthly)` }))
+                      )
+                    ]}
+                    onChange={(value) => setGoalForm({ ...goalForm, parentId: value })}
+                    placeholder="Select a parent goal"
+                    displayKey="name"
+                  />
                 </div>
               )}
               <div className="flex gap-3 pt-2">
