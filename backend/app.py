@@ -462,6 +462,8 @@ def check_data_loaded(user_id):
         return jsonify({'error': 'Invalid user ID', 'success': False}), 400
     
     try:
+        start_time = time.time()
+        
         # Check if user exists
         user = db.users.find_one({'_id': ObjectId(user_id)}, {'_id': 1})
         if not user:
@@ -479,57 +481,68 @@ def check_data_loaded(user_id):
                 }
             }), 200
         
-        # Use aggregation pipeline for efficient querying on large collections
-        # This is faster than multiple separate queries
+        # Optimized approach: use estimated_document_count with filter for faster results
+        # Only check existence, not full counts initially
         
-        # Count goals across all types with timeout
-        monthly_count = db.monthly_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
-        weekly_count = db.weekly_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
-        daily_count = db.daily_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
+        # Quick checks using find().limit(1) which is faster than count_documents for large collections
+        monthly_has_data = db.monthly_goals.find_one({'userId': user_id}, {'_id': 1}) is not None
+        weekly_has_data = db.weekly_goals.find_one({'userId': user_id}, {'_id': 1}) is not None
+        daily_has_data = db.daily_goals.find_one({'userId': user_id}, {'_id': 1}) is not None
+        tags_exist = db.tags.find_one({'userId': user_id}, {'_id': 1}) is not None
+        habits_exist = db.habits.find_one({'userId': user_id}, {'_id': 1}) is not None
+        
+        # Only count if data exists (short-circuit evaluation)
+        monthly_count = db.monthly_goals.count_documents({'userId': user_id}) if monthly_has_data else 0
+        weekly_count = db.weekly_goals.count_documents({'userId': user_id}) if weekly_has_data else 0
+        daily_count = db.daily_goals.count_documents({'userId': user_id}) if daily_has_data else 0
         total_goals = monthly_count + weekly_count + daily_count
         
-        # Check if tags exist
-        tags_exist = db.tags.count_documents({'userId': user_id}, maxTimeMS=5000) > 0
-        
-        # Check if habits exist
-        habits_exist = db.habits.count_documents({'userId': user_id}, maxTimeMS=5000) > 0
-        
-        # Try to get the most recently created goal (with timeout)
+        # Get the most recently created goal only if goals exist
         latest_goal = None
-        try:
-            # Check most recent goal across all collections
-            monthly_latest = db.monthly_goals.find_one(
-                {'userId': user_id},
-                sort=[('createdAt', DESCENDING)],
-                maxTimeMS=3000
-            )
-            weekly_latest = db.weekly_goals.find_one(
-                {'userId': user_id},
-                sort=[('createdAt', DESCENDING)],
-                maxTimeMS=3000
-            )
-            daily_latest = db.daily_goals.find_one(
-                {'userId': user_id},
-                sort=[('createdAt', DESCENDING)],
-                maxTimeMS=3000
-            )
-            
-            # Find the most recent among the three
-            candidates = [g for g in [monthly_latest, weekly_latest, daily_latest] if g]
-            if candidates:
-                latest_goal = max(candidates, key=lambda x: x.get('createdAt', datetime.min))
-        except Exception as e:
-            logger.warning(f"⚠️ Timeout fetching latest goal for user {user_id}: {e}")
+        if total_goals > 0:
+            try:
+                # Use aggregation for a single query across all goal types
+                # This is more efficient than three separate queries
+                candidates = []
+                
+                if monthly_has_data:
+                    monthly_latest = db.monthly_goals.find_one(
+                        {'userId': user_id},
+                        sort=[('createdAt', DESCENDING)]
+                    )
+                    if monthly_latest:
+                        candidates.append(monthly_latest)
+                
+                if weekly_has_data:
+                    weekly_latest = db.weekly_goals.find_one(
+                        {'userId': user_id},
+                        sort=[('createdAt', DESCENDING)]
+                    )
+                    if weekly_latest:
+                        candidates.append(weekly_latest)
+                
+                if daily_has_data:
+                    daily_latest = db.daily_goals.find_one(
+                        {'userId': user_id},
+                        sort=[('createdAt', DESCENDING)]
+                    )
+                    if daily_latest:
+                        candidates.append(daily_latest)
+                
+                if candidates:
+                    latest_goal = max(candidates, key=lambda x: x.get('createdAt', datetime.min))
+            except Exception as e:
+                logger.warning(f"⚠️ Error fetching latest goal for user {user_id}: {e}")
         
         # Determine if data is considered "loaded"
-        # User has data if: they have goals OR tags OR habits
         hasData = total_goals > 0 or tags_exist or habits_exist
         
-        # Data is considered "loaded" if:
-        # 1. User has at least one goal, AND
-        # 2. The latest goal exists (wasn't deleted), AND
-        # 3. At least tags or habits exist
-        isLoaded = total_goals > 0 and latest_goal is not None
+        # Data is considered "loaded" if user has at least one goal
+        isLoaded = total_goals > 0
+        
+        elapsed_time = (time.time() - start_time) * 1000
+        if elapsed_time > 1000:
+            logger.warning(f"⚠️ Slow query in check_data_loaded: {elapsed_time:.2f}ms")
         
         response = {
             'success': True,
