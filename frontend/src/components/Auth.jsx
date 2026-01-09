@@ -110,7 +110,7 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
               {/* Divider */}
               <div className="mb-8 flex items-center gap-3">
                 <div className="flex-1 h-px bg-gradient-to-r from-transparent to-gray-700"></div>
-                <span className="text-xs text-gray-500 uppercase tracking-widest">Sign In</span>
+                <span className="text-xs text-gray-500 tracking-widest">SIGN IN & LOG IN</span>
                 <div className="flex-1 h-px bg-gradient-to-l from-transparent to-gray-700"></div>
               </div>
 
@@ -144,7 +144,7 @@ const AuthContent = ({ isLoading, onLoginSuccess }) => {
               </div>
 
               {/* Bottom text */}
-              <div className="text-center text-xs text-gray-500 pt-4 border-t border-gray-800/50">
+              <div className="text-center text-[11px] text-gray-500 pt-4 border-t border-gray-800/50">
                 <p>On Continuing You will accept our privacy policy and terms of service</p>
               </div>
             </div>

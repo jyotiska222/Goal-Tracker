@@ -47,10 +47,13 @@ const GoalTrackerApp = () => {
   const [goalForm, setGoalForm] = useState({ title: '', tagId: '', parentId: '' });
   const [habitForm, setHabitForm] = useState({ name: '', tagId: '' });
 
+  // Dropdown state
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
   // Drag and drop state
   const [draggedGoal, setDraggedGoal] = useState(null);
 
-// 1234
   const [showStartupLoader, setShowStartupLoader] = useState(true);
 
 
@@ -189,16 +192,53 @@ const GoalTrackerApp = () => {
   useEffect(() => {
     fetchWeather();
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
+    
+    // Update weather every 5 minutes (300000 milliseconds)
+    const weatherInterval = setInterval(() => {
+      fetchWeather();
+      console.log('🌤️ Updating weather...');
+    }, 300000);
+    
+    return () => {
+      clearInterval(timer);
+      clearInterval(weatherInterval);
+    };
   }, []);
 
   useEffect(() => {
-  const timer = setTimeout(() => {
-    setShowStartupLoader(false);
-  }, 2000); // 2 seconds splash loader
+    const checkDataLoaded = async () => {
+      if (!currentUser || !currentUser.id) {
+        setShowStartupLoader(false);
+        return;
+      }
 
-  return () => clearTimeout(timer);
-}, []);
+      try {
+        const response = await fetch(`${API_BASE}/user/${currentUser.id}/loader-check`);
+        if (response.ok) {
+          const data = await response.json();
+          
+          // If data is loaded (has goals) or user has no data at all, hide loader
+          if (data.isLoaded || !data.hasData) {
+            setShowStartupLoader(false);
+          } else {
+            // Data might be loading, check again after a brief delay
+            setTimeout(checkDataLoaded, 1000);
+          }
+        } else {
+          // API error, hide loader after timeout
+          setTimeout(() => setShowStartupLoader(false), 3000);
+        }
+      } catch (error) {
+        console.error('Loader check failed:', error);
+        // Fallback to timeout if check fails
+        setTimeout(() => setShowStartupLoader(false), 3000);
+      }
+    };
+
+    // Start checking after a brief delay to allow initial load
+    const initialTimer = setTimeout(checkDataLoaded, 500);
+    return () => clearTimeout(initialTimer);
+  }, [currentUser]);
 
 
   // Validate and restore user session on mount
@@ -748,52 +788,92 @@ const handleToggleHabit = async (habitId, date) => {
   const CustomDropdown = ({ id, value, options, onChange, placeholder = "Select an option", displayKey = "name" }) => {
     const selectedOption = options.find(opt => opt.id === value || opt.value === value);
     const displayValue = selectedOption ? selectedOption[displayKey] : placeholder;
+    const [dropdownPosition, setDropdownPosition] = React.useState('below');
+
+    const handleDropdownOpen = () => {
+      if (openDropdown !== id) {
+        const button = document.getElementById(`dropdown-${id}`);
+        if (button) {
+          const rect = button.getBoundingClientRect();
+          const spaceBelow = window.innerHeight - rect.bottom;
+          const spaceAbove = rect.top;
+          
+          // Position above if not enough space below
+          if (spaceBelow < 280 && spaceAbove > 280) {
+            setDropdownPosition('above');
+          } else {
+            setDropdownPosition('below');
+          }
+        }
+      }
+      setOpenDropdown(openDropdown === id ? null : id);
+    };
 
     return (
-      <div className="relative">
-        <button
-          onClick={() => setOpenDropdown(openDropdown === id ? null : id)}
-          className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm flex items-center justify-between hover:border-gray-600 transition-colors"
-        >
-          <span className={displayValue === placeholder ? 'text-gray-500' : 'text-white'}>
-            {displayValue}
-          </span>
-          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${openDropdown === id ? 'rotate-180' : ''}`} />
-        </button>
-
+      <>
         {openDropdown === id && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800/95 border border-gray-700/50 rounded-xl shadow-xl z-50 max-h-64 overflow-y-auto backdrop-blur-sm">
-            <div className="p-2">
-              {options.length === 0 ? (
-                <div className="px-4 py-3 text-gray-400 text-sm">No options available</div>
-              ) : (
-                options.map((option, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      onChange(option.id || option.value);
-                      setOpenDropdown(null);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                      (option.id || option.value) === value
-                        ? 'bg-blue-600/80 text-white'
-                        : 'text-gray-200 hover:bg-gray-700/60'
-                    }`}
-                  >
-                    {option.color && (
-                      <div
-                        className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: option.color }}
-                      />
-                    )}
-                    <span>{option[displayKey]}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          <div 
+            className="fixed inset-0 z-[998]" 
+            onClick={() => setOpenDropdown(null)}
+            style={{ pointerEvents: 'none' }}
+          />
         )}
-      </div>
+        <div className="relative z-[100]">
+          <button
+            id={`dropdown-${id}`}
+            onClick={handleDropdownOpen}
+            className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm flex items-center justify-between hover:border-gray-600 transition-colors"
+          >
+            <span className={displayValue === placeholder ? 'text-gray-500' : 'text-white'}>
+              {displayValue}
+            </span>
+            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${openDropdown === id ? 'rotate-180' : ''}`} />
+          </button>
+
+          {openDropdown === id && (
+            <div 
+              className="fixed bg-gray-800/95 border border-gray-700/50 rounded-xl shadow-2xl z-[9999] max-h-64 overflow-y-auto backdrop-blur-sm pointer-events-auto" 
+              style={{
+                top: dropdownPosition === 'below' 
+                  ? `${document.getElementById(`dropdown-${id}`)?.getBoundingClientRect().bottom + 8 || 0}px`
+                  : `${Math.max(0, document.getElementById(`dropdown-${id}`)?.getBoundingClientRect().top - 280 || 0)}px`,
+                left: `${document.getElementById(`dropdown-${id}`)?.getBoundingClientRect().left || 0}px`,
+                width: `${document.getElementById(`dropdown-${id}`)?.clientWidth || 'auto'}px`
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-2">
+                {options.length === 0 ? (
+                  <div className="px-4 py-3 text-gray-400 text-sm">No options available</div>
+                ) : (
+                  options.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        onChange(option.id || option.value);
+                        setOpenDropdown(null);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                        (option.id || option.value) === value
+                          ? 'bg-blue-600/80 text-white'
+                          : 'text-gray-200 hover:bg-gray-700/60'
+                      }`}
+                    >
+                      {option.color && (
+                        <div
+                          className="w-3 h-3 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: option.color }}
+                        />
+                      )}
+                      <span>{option[displayKey]}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </>
     );
   };
 
@@ -1223,7 +1303,7 @@ const handleToggleHabit = async (habitId, date) => {
           {/* Calendar */}
           <div className="flex-1 bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10 select-none">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
+              <h2 className="text-2xl font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
                 {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
               </h2>
               <div className="flex gap-2">
@@ -1337,30 +1417,151 @@ const handleToggleHabit = async (habitId, date) => {
 
       {/* Modals */}
       {showTagModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20">
-            <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">{editingTag ? 'Edit Tag' : 'New Tag'}</h3>
-            <div className="space-y-4">
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowTagModal(false);
+            setEditingTag(null);
+            setTagForm({ name: '', color: '#3b82f6' });
+            setOpenDropdown(null);
+            setShowColorPicker(false);
+          }}
+        >
+          <div 
+            className="bg-gray-900/95 rounded-2xl p-6 w-full max-w-md border border-gray-700/50 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-2xl font-bold text-white mb-6">
+              {editingTag ? 'Edit Tag' : 'New Tag'}
+            </h2>
+
+            <div className="space-y-5">
+              {/* Tag Name Input */}
               <div>
-                <label className="block text-sm text-gray-300 mb-2">Tag Name</label>
-                <input type="text" value={tagForm.name} onChange={(e) => setTagForm({ ...tagForm, name: e.target.value })} className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm" placeholder="Enter tag name" />
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Tag Name
+                </label>
+                <input
+                  type="text"
+                  value={tagForm.name}
+                  onChange={(e) => setTagForm({ ...tagForm, name: e.target.value })}
+                  className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm"
+                  placeholder="Enter tag name"
+                />
               </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Color</label>
-                <input type="color" value={tagForm.color} onChange={(e) => setTagForm({ ...tagForm, color: e.target.value })} className="w-full h-12 bg-gray-800/60 rounded-xl border border-gray-700/50 cursor-pointer" />
+
+              {/* Color Selector */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Color
+                </label>
+                
+                {/* Color Display Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowColorPicker(!showColorPicker)}
+                  className="w-full bg-gray-800/60 rounded-xl px-4 py-3 border border-gray-700/50 hover:border-gray-600 focus:border-blue-500 focus:outline-none transition-colors flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-8 h-8 rounded-lg border-2 border-white/20"
+                      style={{ backgroundColor: tagForm.color }}
+                    />
+                    <span className="text-white font-medium">
+                      {['Blue', 'Purple', 'Pink', 'Red', 'Orange', 'Yellow', 'Green', 'Teal', 'Cyan', 'Indigo', 'Gray', 'Slate'][['#3b82f6', '#a855f7', '#ec4899', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#6366f1', '#6b7280', '#64748b'].indexOf(tagForm.color)] || 'Custom'}
+                    </span>
+                  </div>
+                  <svg 
+                    className={`w-5 h-5 text-gray-400 transition-transform ${showColorPicker ? 'rotate-180' : ''}`}
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {/* Color Picker Dropdown */}
+                {showColorPicker && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-gray-800/95 backdrop-blur-sm rounded-xl border border-gray-700/50 p-4 shadow-2xl z-50">
+                    <div className="grid grid-cols-4 gap-3">
+                      {[
+                        { name: 'Blue', value: '#3b82f6' },
+                        { name: 'Purple', value: '#a855f7' },
+                        { name: 'Pink', value: '#ec4899' },
+                        { name: 'Red', value: '#ef4444' },
+                        { name: 'Orange', value: '#f97316' },
+                        { name: 'Yellow', value: '#eab308' },
+                        { name: 'Green', value: '#22c55e' },
+                        { name: 'Teal', value: '#14b8a6' },
+                        { name: 'Cyan', value: '#06b6d4' },
+                        { name: 'Indigo', value: '#6366f1' },
+                        { name: 'Gray', value: '#6b7280' },
+                        { name: 'Slate', value: '#64748b' }
+                      ].map((color) => (
+                        <button
+                          key={color.value}
+                          type="button"
+                          onClick={() => {
+                            setTagForm({ ...tagForm, color: color.value });
+                            setShowColorPicker(false);
+                          }}
+                          className="group relative aspect-square rounded-lg border-2 transition-all hover:scale-110"
+                          style={{ 
+                            backgroundColor: color.value,
+                            borderColor: tagForm.color === color.value ? '#ffffff' : 'transparent'
+                          }}
+                          title={color.name}
+                        >
+                          {tagForm.color === color.value && (
+                            <svg 
+                              className="absolute inset-0 m-auto w-6 h-6 text-white drop-shadow-lg"
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                            {color.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={handleSaveTag} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-xl font-semibold">Save</button>
-                <button onClick={() => { setShowTagModal(false); setEditingTag(null); setTagForm({ name: '', color: '#3b82f6' }); }} className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Cancel</button>
-              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={handleSaveTag}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setShowTagModal(false);
+                  setEditingTag(null);
+                  setTagForm({ name: '', color: '#3b82f6' });
+                  setOpenDropdown(null);
+                  setShowColorPicker(false);
+                }}
+                className="flex-1 bg-gray-800/60 hover:bg-gray-800 text-white py-3 rounded-xl font-semibold transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {showGoalModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => { setShowGoalModal(false); setEditingGoal(null); setGoalForm({ title: '', tagId: '', parentId: '' }); setOpenDropdown(null); }}>
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">{editingGoal ? 'Edit' : 'New'} {goalType.charAt(0).toUpperCase() + goalType.slice(1)} Goal</h3>
             <div className="space-y-4">
               <div>
@@ -1379,7 +1580,7 @@ const handleToggleHabit = async (habitId, date) => {
                 />
               </div>
               {(goalType === 'weekly' || goalType === 'daily') && (
-                <div>
+                <div className={`transition-opacity ${openDropdown === 'goalTagDropdown' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
                   <label className="block text-sm text-gray-300 mb-2">Parent Goal (Optional)</label>
                   <CustomDropdown
                     id="goalParentDropdown"
@@ -1399,7 +1600,7 @@ const handleToggleHabit = async (habitId, date) => {
               )}
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSaveGoal} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-xl font-semibold">Save</button>
-                <button onClick={() => { setShowGoalModal(false); setEditingGoal(null); setGoalForm({ title: '', tagId: '', parentId: '' }); }} className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Cancel</button>
+                <button onClick={() => { setShowGoalModal(false); setEditingGoal(null); setGoalForm({ title: '', tagId: '', parentId: '' }); setOpenDropdown(null); }} className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Cancel</button>
               </div>
             </div>
           </div>
@@ -1407,8 +1608,8 @@ const handleToggleHabit = async (habitId, date) => {
       )}
 
       {showHabitModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => { setShowHabitModal(false); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); setOpenDropdown(null); }}>
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">{editingHabit ? 'Edit Habit' : 'New Habit'}</h3>
             <div className="space-y-4">
               <div>
@@ -1417,14 +1618,18 @@ const handleToggleHabit = async (habitId, date) => {
               </div>
               <div>
                 <label className="block text-sm text-gray-300 mb-2">Tag</label>
-                <select value={habitForm.tagId} onChange={(e) => setHabitForm({ ...habitForm, tagId: e.target.value })} className="w-full bg-gray-800/60 text-white rounded-xl px-4 py-3 border border-gray-700/50 focus:border-blue-500 focus:outline-none text-sm">
-                  <option value="">Select a tag</option>
-                  {tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-                </select>
+                <CustomDropdown
+                  id="habitTagDropdown"
+                  value={habitForm.tagId}
+                  options={[{ id: '', name: 'Select a tag' }, ...tags]}
+                  onChange={(value) => setHabitForm({ ...habitForm, tagId: value })}
+                  placeholder="Select a tag"
+                  displayKey="name"
+                />
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={handleSaveHabit} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-xl font-semibold">Save</button>
-                <button onClick={() => { setShowHabitModal(false); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); }} className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Cancel</button>
+                <button onClick={() => { setShowHabitModal(false); setEditingHabit(null); setHabitForm({ name: '', tagId: '' }); setOpenDropdown(null); }} className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Cancel</button>
               </div>
             </div>
           </div>
@@ -1432,8 +1637,8 @@ const handleToggleHabit = async (habitId, date) => {
       )}
 
       {showHabitReport && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-6xl border border-blue-500/20 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowHabitReport(null)}>
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-6xl border border-blue-500/20 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">Habit Report: {showHabitReport.name}</h3>
             <div className="space-y-5">
               {(() => {

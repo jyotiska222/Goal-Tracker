@@ -445,6 +445,132 @@ def update_user_timezone(user_id):
     
     return jsonify({'error': 'User not found', 'success': False}), 404
 
+@app.route('/api/user/<user_id>/loader-check', methods=['GET'])
+@limiter.limit("60 per minute")
+@handle_db_errors
+def check_data_loaded(user_id):
+    """Check if user's data is fully loaded (especially goals).
+    
+    Returns:
+    - isLoaded: boolean indicating if at least one goal exists
+    - totalGoals: total count of goals across all types
+    - hasData: boolean indicating if user has any data at all
+    - edge_cases: object with warnings about potential issues
+    """
+    
+    if not ObjectId.is_valid(user_id):
+        return jsonify({'error': 'Invalid user ID', 'success': False}), 400
+    
+    try:
+        # Check if user exists
+        user = db.users.find_one({'_id': ObjectId(user_id)}, {'_id': 1})
+        if not user:
+            return jsonify({
+                'success': True,
+                'isLoaded': False,
+                'totalGoals': 0,
+                'hasData': False,
+                'message': 'User not found',
+                'edge_cases': {
+                    'user_exists': False,
+                    'tags_exist': False,
+                    'habits_exist': False,
+                    'goals_exist': False
+                }
+            }), 200
+        
+        # Use aggregation pipeline for efficient querying on large collections
+        # This is faster than multiple separate queries
+        
+        # Count goals across all types with timeout
+        monthly_count = db.monthly_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
+        weekly_count = db.weekly_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
+        daily_count = db.daily_goals.count_documents({'userId': user_id}, maxTimeMS=5000)
+        total_goals = monthly_count + weekly_count + daily_count
+        
+        # Check if tags exist
+        tags_exist = db.tags.count_documents({'userId': user_id}, maxTimeMS=5000) > 0
+        
+        # Check if habits exist
+        habits_exist = db.habits.count_documents({'userId': user_id}, maxTimeMS=5000) > 0
+        
+        # Try to get the most recently created goal (with timeout)
+        latest_goal = None
+        try:
+            # Check most recent goal across all collections
+            monthly_latest = db.monthly_goals.find_one(
+                {'userId': user_id},
+                sort=[('createdAt', DESCENDING)],
+                maxTimeMS=3000
+            )
+            weekly_latest = db.weekly_goals.find_one(
+                {'userId': user_id},
+                sort=[('createdAt', DESCENDING)],
+                maxTimeMS=3000
+            )
+            daily_latest = db.daily_goals.find_one(
+                {'userId': user_id},
+                sort=[('createdAt', DESCENDING)],
+                maxTimeMS=3000
+            )
+            
+            # Find the most recent among the three
+            candidates = [g for g in [monthly_latest, weekly_latest, daily_latest] if g]
+            if candidates:
+                latest_goal = max(candidates, key=lambda x: x.get('createdAt', datetime.min))
+        except Exception as e:
+            logger.warning(f"⚠️ Timeout fetching latest goal for user {user_id}: {e}")
+        
+        # Determine if data is considered "loaded"
+        # User has data if: they have goals OR tags OR habits
+        hasData = total_goals > 0 or tags_exist or habits_exist
+        
+        # Data is considered "loaded" if:
+        # 1. User has at least one goal, AND
+        # 2. The latest goal exists (wasn't deleted), AND
+        # 3. At least tags or habits exist
+        isLoaded = total_goals > 0 and latest_goal is not None
+        
+        response = {
+            'success': True,
+            'isLoaded': isLoaded,
+            'totalGoals': total_goals,
+            'hasData': hasData,
+            'goalCounts': {
+                'monthly': monthly_count,
+                'weekly': weekly_count,
+                'daily': daily_count
+            },
+            'edge_cases': {
+                'user_exists': True,
+                'tags_exist': tags_exist,
+                'habits_exist': habits_exist,
+                'goals_exist': total_goals > 0,
+                'latest_goal_exists': latest_goal is not None,
+                'user_has_zero_goals': total_goals == 0,
+                'last_goal_deleted': total_goals == 0 and (tags_exist or habits_exist),
+                'query_might_be_slow': total_goals > 10000
+            }
+        }
+        
+        logger.info(f"✅ Loader check for user {user_id}: isLoaded={isLoaded}, totalGoals={total_goals}")
+        return jsonify(response), 200
+        
+    except ServerSelectionTimeoutError:
+        logger.error(f"❌ Database timeout during loader check for user {user_id}")
+        return jsonify({
+            'success': False,
+            'error': 'Database timeout - check may be slow',
+            'isLoaded': False
+        }), 504
+    except Exception as e:
+        logger.error(f"❌ Error checking loader status for user {user_id}: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Internal server error',
+            'isLoaded': False
+        }), 500
+
 # ============== TAGS ENDPOINTS ==============
 @app.route('/api/tags/<user_id>', methods=['GET'])
 @limiter.limit("100 per minute")  # Read operations: 100 per minute per IP
