@@ -2017,7 +2017,7 @@ const handleToggleHabit = async (habitId, date) => {
                     </div>
 
                     {/* Reschedule Count */}
-                    <div>
+                    {/* <div>
                       <div className="text-sm text-gray-400 mb-2">Reschedule History</div>
                       <div className="flex items-center gap-3">
                         <div className="bg-gray-700/40 rounded-lg p-3 border border-gray-600/30 flex-1">
@@ -2035,7 +2035,7 @@ const handleToggleHabit = async (habitId, date) => {
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </div> */}
                   </div>
                 </div>
               )}
