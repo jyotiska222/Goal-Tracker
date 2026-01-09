@@ -1428,17 +1428,17 @@ const handleToggleHabit = async (habitId, date) => {
           }}
         >
           <div 
-            className="bg-gray-900/95 rounded-2xl p-6 w-full max-w-md border border-gray-700/50 shadow-2xl"
+            className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-2xl font-bold text-white mb-6">
+            <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
               {editingTag ? 'Edit Tag' : 'New Tag'}
-            </h2>
+            </h3>
 
-            <div className="space-y-5">
+            <div className="space-y-4">
               {/* Tag Name Input */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm text-gray-300 mb-2">
                   Tag Name
                 </label>
                 <input
@@ -1452,7 +1452,7 @@ const handleToggleHabit = async (habitId, date) => {
 
               {/* Color Selector */}
               <div className="relative">
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm text-gray-300 mb-2">
                   Color
                 </label>
                 
@@ -1535,10 +1535,10 @@ const handleToggleHabit = async (habitId, date) => {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3 mt-8">
+            <div className="flex gap-3 pt-2">
               <button
                 onClick={handleSaveTag}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition-colors"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-xl font-semibold"
               >
                 Save
               </button>
@@ -1550,7 +1550,7 @@ const handleToggleHabit = async (habitId, date) => {
                   setOpenDropdown(null);
                   setShowColorPicker(false);
                 }}
-                className="flex-1 bg-gray-800/60 hover:bg-gray-800 text-white py-3 rounded-xl font-semibold transition-colors"
+                className="flex-1 bg-gray-800/60 text-white py-3 rounded-xl font-semibold"
               >
                 Cancel
               </button>
