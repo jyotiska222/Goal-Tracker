@@ -1,6 +1,86 @@
 @import "tailwindcss";
 
 @layer components {
+  /* ========== Custom Scrollbar Styles ========== */
+  
+  /* Global scrollbar styling for all browsers */
+  .scrollbar-custom {
+    scrollbar-width: thin;
+    scrollbar-color: #3b82f6 #1f2937;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 4px;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #3b82f6 0%, #0ea5e9 100%);
+    border-radius: 4px;
+    border: 2px solid #1f2937;
+  }
+  
+  .scrollbar-custom::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #0ea5e9 0%, #06b6d4 100%);
+  }
+  
+  /* Vibrant scrollbar variant */
+  .scrollbar-vibrant {
+    scrollbar-width: thin;
+    scrollbar-color: #f97316 #1f2937;
+  }
+  
+  .scrollbar-vibrant::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-vibrant::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 4px;
+  }
+  
+  .scrollbar-vibrant::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #f97316 0%, #fb923c 100%);
+    border-radius: 4px;
+    border: 2px solid #1f2937;
+  }
+  
+  .scrollbar-vibrant::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #fb923c 0%, #fed7aa 100%);
+  }
+  
+  /* Purple accent scrollbar */
+  .scrollbar-purple {
+    scrollbar-width: thin;
+    scrollbar-color: #a855f7 #1f2937;
+  }
+  
+  .scrollbar-purple::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-purple::-webkit-scrollbar-track {
+    background: #1f2937;
+    border-radius: 4px;
+  }
+  
+  .scrollbar-purple::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #a855f7 0%, #d946ef 100%);
+    border-radius: 4px;
+    border: 2px solid #1f2937;
+  }
+  
+  .scrollbar-purple::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #d946ef 0%, #e879f9 100%);
+  }
+
   @keyframes slide-down {
     from {
       opacity: 0;

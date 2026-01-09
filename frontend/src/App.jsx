@@ -56,6 +56,12 @@ const GoalTrackerApp = () => {
 
   const [showStartupLoader, setShowStartupLoader] = useState(true);
 
+  const [showGoalDetailsModal, setShowGoalDetailsModal] = useState(false);
+  const [selectedGoalForDetails, setSelectedGoalForDetails] = useState(null);
+  const [showRescheduleHistoryWeekly, setShowRescheduleHistoryWeekly] = useState(false);
+  const [showRescheduleHistoryDaily, setShowRescheduleHistoryDaily] = useState(false);
+  const [goalRescheduleCount, setGoalRescheduleCount] = useState({});
+
 
   const [systemStatus, setSystemStatus] = useState({
     backendLive: false,
@@ -501,17 +507,80 @@ const GoalTrackerApp = () => {
     e.dataTransfer.effectAllowed = 'move';
   };
 
+  const handleDragStartWeeklyGoal = (e, goal) => {
+    // Only allow dragging uncompleted weekly goals
+    if (goal.completed) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedGoal({ ...goal, type: 'weekly' });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
   const handleDragOverDay = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDropGoal = async (e, targetDate) => {
+  const handleDropGoal = async (e, targetDate, targetWeek = null) => {
     e.preventDefault();
     
     if (!draggedGoal) return;
+
+    // Handle weekly goal drop
+    if (draggedGoal.type === 'weekly') {
+      if (!targetWeek) {
+        setDraggedGoal(null);
+        return;
+      }
+
+      // Don't allow dropping completed goals
+      if (draggedGoal.completed) {
+        setDraggedGoal(null);
+        return;
+      }
+
+      const oldWeekKey = `${draggedGoal.year}-W${draggedGoal.weekNumber}`;
+      const newWeekKey = `${targetWeek.year}-W${targetWeek.weekNumber}`;
+
+      // Don't update if dropping on the same week
+      if (oldWeekKey === newWeekKey) {
+        setDraggedGoal(null);
+        return;
+      }
+
+      const { success } = await executeWithToast(
+        async () => {
+          const response = await fetch(`${API_BASE}/goals/weekly/${draggedGoal.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              weekNumber: targetWeek.weekNumber,
+              year: targetWeek.year,
+              weekStart: targetWeek.weekStart,
+              weekEnd: targetWeek.weekEnd
+            })
+          });
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to move goal');
+          }
+          const updatedGoal = await response.json();
+          // Update the selected goal details if it's currently open in the modal
+          if (selectedGoalForDetails && selectedGoalForDetails.id === draggedGoal.id) {
+            setSelectedGoalForDetails(updatedGoal);
+          }
+          await loadData();
+        },
+        { showToast, updateToast },
+        { ...toastConfigs.goal.update, message: 'Goal moved to new week' }
+      );
+
+      setDraggedGoal(null);
+      return;
+    }
     
-    // Only allow dropping daily goals
+    // Original daily goal drop logic
     if (draggedGoal.type !== 'daily') {
       setDraggedGoal(null);
       return;
@@ -542,6 +611,11 @@ const GoalTrackerApp = () => {
         if (!response.ok) {
           const error = await response.json();
           throw new Error(error.error || 'Failed to move goal');
+        }
+        const updatedGoal = await response.json();
+        // Update the selected goal details if it's currently open in the modal
+        if (selectedGoalForDetails && selectedGoalForDetails.id === draggedGoal.id) {
+          setSelectedGoalForDetails(updatedGoal);
         }
         await loadData();
       },
@@ -701,6 +775,15 @@ const handleToggleHabit = async (habitId, date) => {
     return `${day}${suffix} ${month}`;
   };
 
+  const formatDateDDMMYYYY = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
   const getHabitStats = (habit) => {
     const startDate = new Date(habit.startDate);
     const today = new Date();
@@ -710,6 +793,33 @@ const handleToggleHabit = async (habitId, date) => {
   };
 
   const isToday = (date) => isTodayLocal(date);
+
+  // Helper functions for goal hierarchy
+  const getWeeklyGoalsUnderMonthly = (monthlyGoal) => {
+    return weeklyGoals.filter(wg => 
+      wg.parentId === monthlyGoal.id && 
+      wg.year === monthlyGoal.year
+    );
+  };
+
+  const getDailyGoalsUnderWeekly = (weeklyGoal) => {
+    return dailyGoals.filter(dg => 
+      dg.parentId === weeklyGoal.id
+    );
+  };
+
+  const getDailyGoalsUnderDaily = (dailyGoal) => {
+    // For daily goals, we show related goals with same parentId
+    return dailyGoals.filter(dg => 
+      dg.parentId === dailyGoal.parentId && 
+      dg.id !== dailyGoal.id
+    );
+  };
+
+  const getGoalRescheduleCount = (dailyGoal) => {
+    // Return the count of reschedule history entries
+    return dailyGoal?.rescheduleHistory?.length || 0;
+  };
 
   const handleGoogleLoginSuccess = (user) => {
     setCurrentUser(user);
@@ -734,9 +844,9 @@ const handleToggleHabit = async (habitId, date) => {
       ) : (
         <div className="space-y-2">
           {goals.map(goal => (
-            <div key={goal.id} className={`bg-gray-800/50 hover:bg-gray-800/70 rounded-lg p-3 flex items-center gap-3 transition-colors ${goal.completed ? 'opacity-60' : ''}`}>
+            <div key={goal.id} className={`bg-gray-800/50 hover:bg-gray-800/70 rounded-lg p-3 flex items-center gap-3 transition-colors cursor-pointer ${goal.completed ? 'opacity-60' : ''}`} onClick={() => { setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}>
               <button
-                onClick={() => onToggle(goal.id, goal.completed)}
+                onClick={(e) => { e.stopPropagation(); onToggle(goal.id, goal.completed); }}
                 className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 transition-all ${
                   goal.completed
                     ? 'bg-gradient-to-br from-green-600 to-green-700'
@@ -746,7 +856,7 @@ const handleToggleHabit = async (habitId, date) => {
                 {goal.completed && <Check className="w-3.5 h-3.5 text-white" />}
               </button>
               <div className="flex-1 min-w-0">
-                <div className={`text-base font-semibold ${goal.completed ? 'line-through text-gray-500' : 'text-gray-200'}`}>
+                <div className={`text-sm font-semibold ${goal.completed ? 'line-through text-gray-500' : 'text-gray-200'}`}>
                   {goal.title}
                 </div>
                 <div className="flex gap-1 mt-1.5 flex-wrap">
@@ -771,10 +881,10 @@ const handleToggleHabit = async (habitId, date) => {
                 </div>
               </div>
               <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => onEdit(goal)} className="p-1.5 hover:bg-blue-600/20 rounded-lg transition-colors">
+                <button onClick={(e) => { e.stopPropagation(); onEdit(goal); }} className="p-1.5 hover:bg-blue-600/20 rounded-lg transition-colors">
                   <Edit2 className="w-3.5 h-3.5 text-blue-400" />
                 </button>
-                <button onClick={() => onDelete(goal.id)} className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400 transition-colors">
+                <button onClick={(e) => { e.stopPropagation(); onDelete(goal.id); }} className="p-1.5 hover:bg-red-600/20 rounded-lg text-red-400 transition-colors">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -832,7 +942,7 @@ const handleToggleHabit = async (habitId, date) => {
 
           {openDropdown === id && (
             <div 
-              className="fixed bg-gray-800/95 border border-gray-700/50 rounded-xl shadow-2xl z-[9999] max-h-64 overflow-y-auto backdrop-blur-sm pointer-events-auto" 
+              className="fixed bg-gray-800/95 border border-gray-700/50 rounded-xl shadow-2xl z-[9999] max-h-64 overflow-y-auto backdrop-blur-sm pointer-events-auto scrollbar-purple" 
               style={{
                 top: dropdownPosition === 'below' 
                   ? `${document.getElementById(`dropdown-${id}`)?.getBoundingClientRect().bottom + 8 || 0}px`
@@ -1346,11 +1456,55 @@ const handleToggleHabit = async (habitId, date) => {
 
                 return rows.map((row, rowIdx) => (
                   <React.Fragment key={`week-${rowIdx}`}>
-                    <div className="min-h-24 p-2 rounded-lg border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center overflow-y-auto">
+                    <div className="min-h-24 p-2 rounded-lg border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center overflow-y-auto scrollbar-custom"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (draggedGoal?.type === 'weekly') {
+                          e.currentTarget.classList.add('border-purple-500', 'bg-purple-950/30');
+                        }
+                      }}
+                      onDragLeave={(e) => {
+                        e.currentTarget.classList.remove('border-purple-500', 'bg-purple-950/30');
+                      }}
+                      onDrop={(e) => {
+                        e.currentTarget.classList.remove('border-purple-500', 'bg-purple-950/30');
+                        if (draggedGoal?.type === 'weekly' && row.weekNum) {
+                          // Calculate the proper week start and end dates for the target week
+                          const jan1 = new Date(currentDate.getFullYear(), 0, 1);
+                          const jan1DayOfWeek = jan1.getDay();
+                          // Monday is day 1, Sunday is day 0 -> adjust to ISO week (Monday = 1)
+                          const daysToAddForWeek1 = jan1DayOfWeek === 0 ? 1 : 2 - jan1DayOfWeek;
+                          const firstMonday = new Date(currentDate.getFullYear(), 0, 1 + daysToAddForWeek1);
+                          
+                          const weekStartDate = new Date(firstMonday);
+                          weekStartDate.setDate(weekStartDate.getDate() + (row.weekNum - 1) * 7);
+                          
+                          const weekEndDate = new Date(weekStartDate);
+                          weekEndDate.setDate(weekEndDate.getDate() + 6);
+                          
+                          handleDropGoal(e, null, { 
+                            weekNumber: row.weekNum, 
+                            year: currentDate.getFullYear(),
+                            weekStart: formatDateLocal(weekStartDate),
+                            weekEnd: formatDateLocal(weekEndDate)
+                          });
+                        }
+                      }}
+                    >
                       <div className="text-center font-semibold text-sm text-purple-400 mb-2">W{row.weekNum}</div>
                       <div className="flex flex-col gap-0.5 w-full">
                         {weeklyGoals.filter(g => g.weekNumber === row.weekNum && g.year === currentDate.getFullYear()).slice(0, 8).map(goal => (
-                          <div key={goal.id} className={`text-xs px-1.5 py-1 rounded truncate text-white ${goal.completed ? 'line-through opacity-50' : ''}`} style={{ backgroundColor: getTagColor(goal.tagId) }} title={goal.title}>
+                          <div 
+                            key={goal.id} 
+                            draggable={!goal.completed}
+                            onDragStart={(e) => handleDragStartWeeklyGoal(e, goal)}
+                            onDragEnd={() => setDraggedGoal(null)}
+                            onClick={() => { setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
+                            className={`text-xs px-1.5 py-1 rounded truncate text-white cursor-pointer hover:opacity-80 transition-opacity ${goal.completed ? 'line-through opacity-50' : ''}`} 
+                            style={{ backgroundColor: getTagColor(goal.tagId) }} 
+                            title={goal.title}
+                          >
                             {goal.title}
                           </div>
                         ))}
@@ -1370,7 +1524,7 @@ const handleToggleHabit = async (habitId, date) => {
                           onClick={() => setSelectedDate(day)}
                           onDragOver={handleDragOverDay}
                           onDrop={(e) => handleDropGoal(e, day)}
-                          className={`min-h-24 p-2 rounded-lg border cursor-pointer overflow-y-auto transition-all ${
+                          className={`min-h-24 p-2 rounded-lg border cursor-pointer overflow-y-auto scrollbar-custom transition-all ${
                             draggedGoal ? 'opacity-80' : 'opacity-100'
                           } ${
                             dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
@@ -1395,7 +1549,8 @@ const handleToggleHabit = async (habitId, date) => {
                                 draggable={!goal.completed}
                                 onDragStart={(e) => handleDragStartGoal(e, goal)}
                                 onDragEnd={() => setDraggedGoal(null)}
-                                className={`text-xs px-1.5 py-1 rounded truncate cursor-move ${goal.completed ? 'line-through opacity-50 cursor-not-allowed' : 'hover:opacity-80'}`} 
+                                onClick={(e) => { e.stopPropagation(); setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
+                                className={`text-xs px-1.5 py-1 rounded truncate cursor-pointer ${goal.completed ? 'line-through opacity-50' : 'hover:opacity-80'}`} 
                                 style={{ backgroundColor: getTagColor(goal.tagId) }} 
                                 title={goal.title}
                               >
@@ -1561,7 +1716,7 @@ const handleToggleHabit = async (habitId, date) => {
 
       {showGoalModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => { setShowGoalModal(false); setEditingGoal(null); setGoalForm({ title: '', tagId: '', parentId: '' }); setOpenDropdown(null); }}>
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-md border border-blue-500/20 max-h-[90vh] overflow-y-auto scrollbar-custom" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">{editingGoal ? 'Edit' : 'New'} {goalType.charAt(0).toUpperCase() + goalType.slice(1)} Goal</h3>
             <div className="space-y-4">
               <div>
@@ -1588,7 +1743,10 @@ const handleToggleHabit = async (habitId, date) => {
                     options={[
                       { id: '', name: 'Independent' },
                       ...(goalType === 'daily' 
-                        ? weeklyGoals.filter(g => g.weekNumber === getISOWeekNumber(selectedDate) && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Weekly)` }))
+                        ? [
+                            ...weeklyGoals.filter(g => g.weekNumber === getISOWeekNumber(selectedDate) && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Weekly)` })),
+                            ...monthlyGoals.filter(g => g.month === selectedDate.getMonth() && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Monthly)` }))
+                          ]
                         : monthlyGoals.filter(g => g.month === selectedDate.getMonth() && g.year === selectedDate.getFullYear()).map(goal => ({ id: goal.id, name: `${goal.title} (Monthly)` }))
                       )
                     ]}
@@ -1638,7 +1796,7 @@ const handleToggleHabit = async (habitId, date) => {
 
       {showHabitReport && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setShowHabitReport(null)}>
-          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-6xl border border-blue-500/20 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-6xl border border-blue-500/20 max-h-[90vh] overflow-y-auto scrollbar-custom" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold mb-5 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">Habit Report: {showHabitReport.name}</h3>
             <div className="space-y-5">
               {(() => {
@@ -1726,6 +1884,371 @@ const handleToggleHabit = async (habitId, date) => {
               })()}
               <button onClick={() => setShowHabitReport(null)} className="w-full bg-gray-800/60 text-white py-3 rounded-xl font-semibold">Close</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showGoalDetailsModal && selectedGoalForDetails && (
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => {
+            setShowGoalDetailsModal(false);
+            setSelectedGoalForDetails(null);
+          }}
+        >
+          <div 
+            className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl p-6 w-full max-w-2xl border border-blue-500/20 max-h-[90vh] overflow-y-auto scrollbar-custom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
+                  {selectedGoalForDetails.title}
+                </h2>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="text-sm px-3 py-1 rounded-lg text-white" style={{ backgroundColor: getTagColor(selectedGoalForDetails.tagId) }}>
+                    {getTagName(selectedGoalForDetails.tagId)}
+                  </span>
+                  {selectedGoalForDetails.completed && (
+                    <span className="text-sm px-3 py-1 rounded-lg bg-green-600/60 text-white flex items-center gap-1">
+                      <Check className="w-4 h-4" /> Completed
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setShowGoalDetailsModal(false);
+                  setSelectedGoalForDetails(null);
+                }}
+                className="p-2 hover:bg-gray-700/50 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6 text-gray-400" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Goal Info */}
+              <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                <h3 className="text-lg font-semibold text-blue-400 mb-4">Goal Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-sm text-gray-400 mb-1">Type</div>
+                    <div className="text-white font-medium capitalize">
+                      {selectedGoalForDetails.date ? 'Daily' : selectedGoalForDetails.weekNumber ? 'Weekly' : 'Monthly'}
+                    </div>
+                  </div>
+                  {selectedGoalForDetails.month !== undefined && (
+                    <div>
+                      <div className="text-sm text-gray-400 mb-1">Month</div>
+                      <div className="text-white font-medium">{getMonthName(selectedGoalForDetails.month)} {selectedGoalForDetails.year}</div>
+                    </div>
+                  )}
+                  {selectedGoalForDetails.weekNumber && (
+                    <div>
+                      <div className="text-sm text-gray-400 mb-1">Week</div>
+                      <div className="text-white font-medium">Week {selectedGoalForDetails.weekNumber}</div>
+                    </div>
+                  )}
+                  {selectedGoalForDetails.date && (
+                    <div>
+                      <div className="text-sm text-gray-400 mb-1">Date</div>
+                      <div className="text-white font-medium">{formatDateLabel(selectedGoalForDetails.date)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Parent Goal & Reschedule Count */}
+              {(selectedGoalForDetails.date || selectedGoalForDetails.weekNumber) && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <h3 className="text-lg font-semibold text-cyan-400 mb-4">Goal Info</h3>
+                  <div className="space-y-3">
+                    {/* Parent Goal */}
+                    <div>
+                      <div className="text-sm text-gray-400 mb-2">Parent Goal</div>
+                      {selectedGoalForDetails.parentId ? (
+                        <div className="bg-gray-700/40 rounded-lg p-3 border border-gray-600/30">
+                          {selectedGoalForDetails.weekNumber && !selectedGoalForDetails.date ? (
+                            // Weekly goal - parent is monthly
+                            (() => {
+                              const parentGoal = monthlyGoals.find(g => g.id === selectedGoalForDetails.parentId);
+                              return parentGoal ? (
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <div className="font-medium text-white">{parentGoal.title}</div>
+                                    <div className="text-xs text-gray-400 mt-1">{getMonthName(parentGoal.month)} {parentGoal.year}</div>
+                                  </div>
+                                  <span className="text-xs px-2 py-1 rounded bg-blue-600/40 text-blue-300">Monthly</span>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-500">Parent goal not found</span>
+                              );
+                            })()
+                          ) : (
+                            // Daily goal - parent can be weekly or monthly
+                            (() => {
+                              const weeklyParent = weeklyGoals.find(g => g.id === selectedGoalForDetails.parentId);
+                              const monthlyParent = monthlyGoals.find(g => g.id === selectedGoalForDetails.parentId);
+                              const parent = weeklyParent || monthlyParent;
+                              return parent ? (
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <div className="font-medium text-white">{parent.title}</div>
+                                    <div className="text-xs text-gray-400 mt-1">
+                                      {weeklyParent ? `Week ${parent.weekNumber}` : `${getMonthName(parent.month)} ${parent.year}`}
+                                    </div>
+                                  </div>
+                                  <span className={`text-xs px-2 py-1 rounded ${weeklyParent ? 'bg-purple-600/40 text-purple-300' : 'bg-blue-600/40 text-blue-300'}`}>
+                                    {weeklyParent ? 'Weekly' : 'Monthly'}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-500">Parent goal not found</span>
+                              );
+                            })()
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-500 bg-gray-700/20 rounded-lg p-3">
+                          <span className="inline-block px-3 py-1 rounded-full bg-gray-700/40">Independent Goal</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Reschedule Count */}
+                    <div>
+                      <div className="text-sm text-gray-400 mb-2">Reschedule History</div>
+                      <div className="flex items-center gap-3">
+                        <div className="bg-gray-700/40 rounded-lg p-3 border border-gray-600/30 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold text-orange-400">
+                              {selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length > 0 
+                                ? selectedGoalForDetails.rescheduleHistory.length 
+                                : '0'}
+                            </span>
+                            <span className="text-sm text-gray-400">
+                              {selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length === 1 
+                                ? 'reschedule' 
+                                : 'reschedules'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {!selectedGoalForDetails.date && !selectedGoalForDetails.weekNumber && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <h3 className="text-lg font-semibold text-purple-400 mb-4">Weekly Goals</h3>
+                  {getWeeklyGoalsUnderMonthly(selectedGoalForDetails).length === 0 ? (
+                    <p className="text-sm text-gray-500">No weekly goals under this monthly goal</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {getWeeklyGoalsUnderMonthly(selectedGoalForDetails).map(weeklyGoal => (
+                        <div 
+                          key={weeklyGoal.id} 
+                          draggable={!weeklyGoal.completed}
+                          onDragStart={(e) => handleDragStartWeeklyGoal(e, weeklyGoal)}
+                          onDragEnd={() => setDraggedGoal(null)}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            if (draggedGoal?.type === 'weekly') {
+                              e.currentTarget.classList.add('border-blue-500', 'bg-blue-950/30');
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            e.currentTarget.classList.remove('border-blue-500', 'bg-blue-950/30');
+                          }}
+                          onDrop={(e) => {
+                            e.currentTarget.classList.remove('border-blue-500', 'bg-blue-950/30');
+                            handleDropGoal(e, null, { 
+                              weekNumber: weeklyGoal.weekNumber, 
+                              year: weeklyGoal.year,
+                              weekStart: weeklyGoal.weekStart,
+                              weekEnd: weeklyGoal.weekEnd
+                            });
+                          }}
+                          className={`bg-gray-700/30 rounded-lg p-3 border border-gray-600/30 transition-all ${!weeklyGoal.completed ? 'cursor-move hover:border-blue-500/50' : ''}`}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div>
+                              <div className={`font-semibold ${weeklyGoal.completed ? 'line-through opacity-60 text-gray-500' : 'text-gray-200'}`}>{weeklyGoal.title}</div>
+                              <div className="text-xs text-gray-400 mt-1">Week {weeklyGoal.weekNumber}</div>
+                            </div>
+                            <span className="text-xs px-2 py-1 rounded bg-purple-600/60 text-white">
+                              {getDailyGoalsUnderWeekly(weeklyGoal).length} daily
+                            </span>
+                          </div>
+                          
+                          {/* Daily Goals under Weekly */}
+                          {getDailyGoalsUnderWeekly(weeklyGoal).length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-gray-600/30 space-y-1">
+                              {getDailyGoalsUnderWeekly(weeklyGoal).map(dailyGoal => (
+                                <div key={dailyGoal.id} className="text-sm text-gray-300 flex items-center gap-2 ml-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                  <span className={dailyGoal.completed ? 'line-through opacity-60' : ''}>
+                                    {dailyGoal.title} ({formatDateLabel(dailyGoal.date)})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Weekly Goal Hierarchy */}
+              {selectedGoalForDetails.weekNumber && !selectedGoalForDetails.date && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <h3 className="text-lg font-semibold text-green-400 mb-4">Daily Goals</h3>
+                  {getDailyGoalsUnderWeekly(selectedGoalForDetails).length === 0 ? (
+                    <p className="text-sm text-gray-500">No daily goals under this weekly goal</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {getDailyGoalsUnderWeekly(selectedGoalForDetails).map(dailyGoal => (
+                        <div key={dailyGoal.id} className="bg-gray-700/30 rounded-lg p-3 border border-gray-600/30 flex items-start gap-3">
+                          <div className="flex-1">
+                            <div className={`font-semibold ${dailyGoal.completed ? 'line-through opacity-60 text-gray-500' : 'text-gray-200'}`}>{dailyGoal.title}</div>
+                            <div className="text-xs text-gray-400 mt-1">{formatDateLabel(dailyGoal.date)}</div>
+                          </div>
+                          {dailyGoal.completed && (
+                            <span className="text-xs px-2 py-1 rounded bg-green-600/60 text-white flex items-center gap-1 flex-shrink-0">
+                              <Check className="w-3 h-3" /> Done
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Weekly Goal Reschedule Info */}
+              {selectedGoalForDetails.weekNumber && !selectedGoalForDetails.date && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <button
+                    onClick={() => setShowRescheduleHistoryWeekly(!showRescheduleHistoryWeekly)}
+                    className="w-full flex items-center justify-between hover:bg-gray-800/30 transition-colors p-2 -m-2 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-orange-400">Reschedule History</h3>
+                      {selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length > 0 && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-orange-600/40 text-orange-300">
+                          {selectedGoalForDetails.rescheduleHistory.length}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-orange-400 transition-transform ${showRescheduleHistoryWeekly ? 'rotate-0' : '-rotate-90'}`} />
+                  </button>
+
+                  {showRescheduleHistoryWeekly && selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-700/30 space-y-2 max-h-64 overflow-y-auto scrollbar-vibrant">
+                      {selectedGoalForDetails.rescheduleHistory.map((history, idx) => (
+                        <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="text-blue-300 font-medium">W{history.fromWeek}, {history.fromYear}</span>
+                            <span className="text-gray-500">→</span>
+                            <span className="text-green-300 font-medium">W{history.toWeek}, {history.toYear}</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {new Date(history.changedAt).toLocaleDateString('en-US', { 
+                              year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {(!selectedGoalForDetails.rescheduleHistory || selectedGoalForDetails.rescheduleHistory.length === 0) && (
+                    <div className="text-xs text-gray-500 mt-2">No reschedules yet</div>
+                  )}
+                </div>
+              )}
+
+              {/* Daily Goal Reschedule Info */}
+              {selectedGoalForDetails.date && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <button
+                    onClick={() => setShowRescheduleHistoryDaily(!showRescheduleHistoryDaily)}
+                    className="w-full flex items-center justify-between hover:bg-gray-800/30 transition-colors p-2 -m-2 rounded-lg"
+                  >
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-orange-400">Reschedule History</h3>
+                      {selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length > 0 && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-orange-600/40 text-orange-300">
+                          {selectedGoalForDetails.rescheduleHistory.length}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-orange-400 transition-transform ${showRescheduleHistoryDaily ? 'rotate-0' : '-rotate-90'}`} />
+                  </button>
+
+                  {showRescheduleHistoryDaily && selectedGoalForDetails.rescheduleHistory && selectedGoalForDetails.rescheduleHistory.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-700/30 space-y-2 max-h-64 overflow-y-auto scrollbar-vibrant">
+                      {selectedGoalForDetails.rescheduleHistory.map((history, idx) => {
+                        const formatDateForDisplay = (dateStr) => {
+                          const [year, month, day] = dateStr.split('-');
+                          return `${day}-${month}-${year}`;
+                        };
+                        return (
+                          <div key={idx} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="text-blue-300 font-medium">{formatDateForDisplay(history.fromDate)}</span>
+                              <span className="text-gray-500">→</span>
+                              <span className="text-green-300 font-medium">{formatDateForDisplay(history.toDate)}</span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              {new Date(history.changedAt).toLocaleDateString('en-US', { 
+                                year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {(!selectedGoalForDetails.rescheduleHistory || selectedGoalForDetails.rescheduleHistory.length === 0) && (
+                    <div className="text-xs text-gray-500 mt-2">No reschedules yet</div>
+                  )}
+                </div>
+              )}
+
+              {/* Related Daily Goals (for daily goals with same parent) */}
+              {selectedGoalForDetails.date && selectedGoalForDetails.parentId && getDailyGoalsUnderDaily(selectedGoalForDetails).length > 0 && (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700/30">
+                  <h3 className="text-lg font-semibold text-blue-400 mb-4">Related Goals</h3>
+                  <div className="space-y-2">
+                    {getDailyGoalsUnderDaily(selectedGoalForDetails).map(relatedGoal => (
+                      <div key={relatedGoal.id} className="text-sm text-gray-300 flex items-center gap-2 p-2 rounded bg-gray-700/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                        <span className={relatedGoal.completed ? 'line-through opacity-60' : ''}>
+                          {relatedGoal.title}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setShowGoalDetailsModal(false);
+                setSelectedGoalForDetails(null);
+              }}
+              className="w-full mt-6 bg-gradient-to-r from-gray-700 to-gray-800 hover:from-gray-600 hover:to-gray-700 text-white py-3 rounded-xl font-semibold transition-all"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

@@ -750,6 +750,14 @@ def update_monthly_goal(goal_id):
                         'updatedAt': get_utc_now().isoformat()
                     }}
                 )
+            # Also cascade to all daily goals directly under this monthly goal
+            db.daily_goals.update_many(
+                {'parentId': goal_id},
+                {'$set': {
+                    'completed': True,
+                    'updatedAt': get_utc_now().isoformat()
+                }}
+            )
         
         return jsonify(serialize_doc(result)), 200
     
@@ -779,6 +787,12 @@ def get_weekly_goals(user_id):
     limit = max(1, min(100, request.args.get('limit', 50, type=int)))  # Max 100 per page
     skip = (page - 1) * limit
     
+    # First, ensure all weekly goals have rescheduleHistory field (backward compatibility)
+    db.weekly_goals.update_many(
+        {'userId': user_id, 'rescheduleHistory': {'$exists': False}},
+        {'$set': {'rescheduleHistory': []}}
+    )
+    
     goals = list(db.weekly_goals.find({'userId': user_id}).sort('createdAt', DESCENDING).skip(skip).limit(limit))
     total = db.weekly_goals.count_documents({'userId': user_id})
     
@@ -803,6 +817,7 @@ def create_weekly_goal():
         'year': data.get('year'),
         'userId': data.get('userId'),
         'completed': False,
+        'rescheduleHistory': [],
         'createdAt': get_utc_now().isoformat()
     }
     
@@ -829,6 +844,12 @@ def update_weekly_goal(goal_id):
     if not ObjectId.is_valid(goal_id):
         return jsonify({'error': 'Invalid goal ID', 'success': False}), 400
     
+    # Get the current goal to check if week is being changed
+    current_goal = db.weekly_goals.find_one({'_id': ObjectId(goal_id)})
+    
+    if not current_goal:
+        return jsonify({'error': 'Goal not found', 'success': False}), 404
+    
     update_data = {k: v for k, v in {
         'title': data.get('title'),
         'tagId': data.get('tagId'),
@@ -840,6 +861,33 @@ def update_weekly_goal(goal_id):
         'completed': data.get('completed'),
         'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
+    
+    # Get current week info for comparison
+    current_week = current_goal.get('weekNumber')
+    current_year = current_goal.get('year')
+    new_week = update_data.get('weekNumber', current_week)
+    new_year = update_data.get('year', current_year)
+    
+    # If week is being changed (rescheduled), add to rescheduleHistory
+    if new_week != current_week or new_year != current_year:
+        # Initialize or get existing history
+        history = current_goal.get('rescheduleHistory', []) or []
+        
+        # Add new history entry
+        history_entry = {
+            'fromWeek': current_week,
+            'fromYear': current_year,
+            'toWeek': new_week,
+            'toYear': new_year,
+            'changedAt': get_utc_now().isoformat()
+        }
+        history.append(history_entry)
+        
+        update_data['rescheduleHistory'] = history
+    else:
+        # Preserve existing rescheduleHistory if no week change
+        if 'rescheduleHistory' not in update_data and current_goal.get('rescheduleHistory'):
+            update_data['rescheduleHistory'] = current_goal.get('rescheduleHistory')
     
     result = db.weekly_goals.find_one_and_update(
         {'_id': ObjectId(goal_id)},
@@ -907,12 +955,17 @@ def create_daily_goal():
         'date': data.get('date'),
         'userId': data.get('userId'),
         'completed': False,
+        'rescheduleHistory': [],
         'createdAt': get_utc_now().isoformat()
     }
     
     # Inherit tag from parent if no tag specified and parent exists
     if not new_goal['tagId'] and new_goal['parentId'] and ObjectId.is_valid(new_goal['parentId']):
+        # Check if parent is a weekly goal
         parent = db.weekly_goals.find_one({'_id': ObjectId(new_goal['parentId'])}, {'tagId': 1})
+        # If not found in weekly goals, check monthly goals
+        if not parent:
+            parent = db.monthly_goals.find_one({'_id': ObjectId(new_goal['parentId'])}, {'tagId': 1})
         if parent:
             new_goal['tagId'] = parent.get('tagId', '')
     
@@ -933,6 +986,9 @@ def update_daily_goal(goal_id):
     if not ObjectId.is_valid(goal_id):
         return jsonify({'error': 'Invalid goal ID', 'success': False}), 400
     
+    # Get the current goal to check if date is being changed
+    current_goal = db.daily_goals.find_one({'_id': ObjectId(goal_id)})
+    
     update_data = {k: v for k, v in {
         'title': data.get('title'),
         'tagId': data.get('tagId'),
@@ -941,6 +997,24 @@ def update_daily_goal(goal_id):
         'completed': data.get('completed'),
         'updatedAt': get_utc_now().isoformat()
     }.items() if v is not None}
+    
+    # If date is being changed (rescheduled), add to rescheduleHistory
+    if 'date' in update_data and current_goal and current_goal.get('date') != update_data['date']:
+        old_date = current_goal.get('date')
+        new_date = update_data['date']
+        
+        # Initialize or get existing history
+        history = current_goal.get('rescheduleHistory', []) or []
+        
+        # Add new history entry
+        history_entry = {
+            'fromDate': old_date,
+            'toDate': new_date,
+            'changedAt': get_utc_now().isoformat()
+        }
+        history.append(history_entry)
+        
+        update_data['rescheduleHistory'] = history
     
     result = db.daily_goals.find_one_and_update(
         {'_id': ObjectId(goal_id)},

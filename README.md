@@ -31,8 +31,10 @@ A comprehensive productivity application for managing personal goals and habits 
   - **Monthly Goals**: Long-term objectives for each month
   - **Weekly Goals**: Medium-term goals organized by week number
   - **Daily Goals**: Short-term actionable tasks for specific dates
-- **Goal Hierarchy**: Weekly and daily goals can be sub-goals of monthly goals
+- **Goal Hierarchy**: Weekly goals can have monthly goals as parents; daily goals can have weekly or monthly goals as parents
 - **Goal Completion Tracking**: Mark goals as complete with visual indicators
+- **Goal Details Modal**: View comprehensive goal information including parent goal and reschedule history count
+- **Reschedule Tracking**: Automatically tracks when goals are rescheduled to different dates/weeks
 - **Tag Organization**: Organize goals using color-coded custom tags
 - **Flexible Editing**: Edit, update, or delete goals at any time
 

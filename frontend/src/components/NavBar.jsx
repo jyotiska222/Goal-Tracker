@@ -342,7 +342,7 @@ const MobileSidebar = ({ isOpen, onClose, systemStatus, weather, getWeatherEmoji
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-custom">
             {/* System Status */}
             {/* <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gray-800/40 border border-blue-500/20">
               <span className="text-sm font-medium text-gray-300">System Status</span>
