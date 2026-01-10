@@ -1215,10 +1215,10 @@ const handleToggleHabit = async (habitId, date) => {
             </div>
           </div>
 
-          <div className="grid gap-0.5" style={{ gridTemplateColumns: '28px repeat(7, 1fr)' }}>
-            <div className="text-center text-[8px] text-gray-500 py-0.5 font-semibold">W</div>
+          <div className="grid gap-0.5" style={{ gridTemplateColumns: 'repeat(8, 1fr)' }}>
+            <div className="text-center text-[9px] text-gray-500 py-0.5 font-semibold">W</div>
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
-              <div key={idx} className="text-center text-[8px] text-gray-400 py-0.5 font-medium">{day}</div>
+              <div key={idx} className="text-center text-[9px] text-gray-400 py-0.5 font-medium">{day}</div>
             ))}
             
             {(() => {
@@ -1242,7 +1242,7 @@ const handleToggleHabit = async (habitId, date) => {
 
               return rows.map((row, rowIdx) => (
                 <React.Fragment key={`week-${rowIdx}`}>
-                  <div className="min-h-14 p-0.5 rounded border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center justify-start overflow-hidden"
+                  <div className="min-h-20 px-0.5 py-1 rounded border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center justify-start overflow-hidden"
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
@@ -1276,8 +1276,8 @@ const handleToggleHabit = async (habitId, date) => {
                       }
                     }}
                   >
-                    <div className="text-center font-bold text-[7px] text-purple-400">{row.weekNum}</div>
-                    <div className="flex flex-col gap-px w-full mt-0.5">
+                    <div className="text-center font-bold text-[10px] text-purple-400 mb-0.5">W{row.weekNum}</div>
+                    <div className="flex flex-col gap-0.5 w-full">
                       {weeklyGoals.filter(g => g.weekNumber === row.weekNum && g.year === currentDate.getFullYear()).slice(0, 2).map(goal => (
                         <div 
                           key={goal.id} 
@@ -1312,10 +1312,12 @@ const handleToggleHabit = async (habitId, date) => {
                             }
                           }}
                           onClick={() => { setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
-                          className={`h-1 w-full rounded-sm ${goal.completed ? 'opacity-40' : ''}`} 
+                          className={`text-[8px] px-1 py-0.5 rounded truncate text-white ${goal.completed ? 'opacity-40 line-through' : ''}`} 
                           style={{ backgroundColor: getTagColor(goal.tagId) }} 
                           title={goal.title}
-                        />
+                        >
+                          {goal.title}
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1333,19 +1335,19 @@ const handleToggleHabit = async (habitId, date) => {
                         onClick={() => setSelectedDate(day)}
                         onDragOver={handleDragOverDay}
                         onDrop={(e) => handleDropGoal(e, day)}
-                        className={`min-h-14 p-0.5 rounded border cursor-pointer overflow-hidden transition-all ${
+                        className={`min-h-20 px-0.5 py-1 rounded border cursor-pointer overflow-hidden transition-all ${
                           draggedGoal ? 'opacity-80' : 'opacity-100'
                         } ${
                           dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
                         }`}
                       >
-                        <div className="flex items-start justify-between mb-px">
-                          <div className={`text-[9px] font-medium leading-none ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</div>
+                        <div className="flex items-start justify-between mb-0.5">
+                          <div className={`text-[11px] font-medium leading-none ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</div>
                           {dayForecast && (
-                            <div className="text-[9px] leading-none">{getWeatherEmoji(dayForecast.weatherCode)}</div>
+                            <div className="text-[10px] leading-none">{getWeatherEmoji(dayForecast.weatherCode)}</div>
                           )}
                         </div>
-                        <div className="flex flex-col gap-px">
+                        <div className="flex flex-col gap-0.5">
                           {goalsForDay.slice(0, 2).map(goal => (
                             <div 
                               key={goal.id} 
@@ -1380,12 +1382,14 @@ const handleToggleHabit = async (habitId, date) => {
                                 }
                               }}
                               onClick={(e) => { e.stopPropagation(); setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
-                              className={`h-1 w-full rounded-sm ${goal.completed ? 'opacity-40' : ''}`} 
+                              className={`text-[8px] px-1 py-0.5 rounded truncate text-white ${goal.completed ? 'opacity-40 line-through' : ''}`} 
                               style={{ backgroundColor: getTagColor(goal.tagId) }} 
                               title={goal.title}
-                            />
+                            >
+                              {goal.title}
+                            </div>
                           ))}
-                          {goalsForDay.length > 2 && <div className="text-[6px] text-gray-400 text-center leading-none mt-px">+{goalsForDay.length - 2}</div>}
+                          {goalsForDay.length > 2 && <div className="text-[7px] text-gray-400 text-center leading-none mt-px">+{goalsForDay.length - 2}</div>}
                         </div>
                       </div>
                     );
