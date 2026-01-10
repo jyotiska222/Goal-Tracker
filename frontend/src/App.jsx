@@ -1335,7 +1335,8 @@ const handleToggleHabit = async (habitId, date) => {
                         onClick={() => setSelectedDate(day)}
                         onDragOver={handleDragOverDay}
                         onDrop={(e) => handleDropGoal(e, day)}
-                        className={`min-h-20 px-0.5 py-1 rounded border cursor-pointer overflow-hidden transition-all ${
+                        style={{ minHeight: `${Math.max(72, 40 + goalsForDay.slice(0, 4).length * 16)}px` }}
+                        className={`px-0.5 py-1 rounded border cursor-pointer overflow-hidden transition-all ${
                           draggedGoal ? 'opacity-80' : 'opacity-100'
                         } ${
                           dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
@@ -1348,7 +1349,7 @@ const handleToggleHabit = async (habitId, date) => {
                           )}
                         </div>
                         <div className="flex flex-col gap-0.5">
-                          {goalsForDay.slice(0, 2).map(goal => (
+                          {goalsForDay.slice(0, 4).map(goal => (
                             <div 
                               key={goal.id} 
                               draggable={!goal.completed}
@@ -1389,7 +1390,7 @@ const handleToggleHabit = async (habitId, date) => {
                               {goal.title}
                             </div>
                           ))}
-                          {goalsForDay.length > 2 && <div className="text-[7px] text-gray-400 text-center leading-none mt-px">+{goalsForDay.length - 2}</div>}
+                          {goalsForDay.length > 4 && <div className="text-[7px] text-gray-400 text-center leading-none mt-px">+{goalsForDay.length - 4}</div>}
                         </div>
                       </div>
                     );
