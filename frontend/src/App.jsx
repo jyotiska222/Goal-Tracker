@@ -1215,46 +1215,196 @@ const handleToggleHabit = async (habitId, date) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1">
+          <div className="grid gap-1.5" style={{ gridTemplateColumns: '40px repeat(7, 1fr)' }}>
+            <div className="text-center text-[9px] text-gray-500 py-1 font-semibold">Week</div>
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
-              <div key={idx} className="text-center text-xs text-gray-400 py-1 font-medium">{day}</div>
+              <div key={idx} className="text-center text-[9px] text-gray-400 py-1 font-medium">{day}</div>
             ))}
             
-            {getDaysInMonth(currentDate).map((day, idx) => {
-              if (!day) return <div key={`empty-${idx}`} />;
-              
-              const goalsForDay = getGoalsForDate(day);
-              const dayIsToday = isTodayLocal(day);
-              const dateStr = formatDateLocal(day);
-              const dayForecast = forecastData[dateStr];
-              
-              return (
-                <div
-                  key={idx}
-                  onClick={() => setSelectedDate(day)}
-                  onDragOver={handleDragOverDay}
-                  onDrop={(e) => handleDropGoal(e, day)}
-                  className={`aspect-square p-1 rounded-lg border cursor-pointer transition-all ${
-                    draggedGoal ? 'opacity-80' : 'opacity-100'
-                  } ${
-                    dayIsToday ? 'border-blue-500 bg-blue-950/50' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gray-800/60' : 'border-gray-700/50 bg-gray-800/40'
-                  }`}
-                >
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs font-medium ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</span>
-                      {dayForecast && <span className="text-xs">{getWeatherEmoji(dayForecast.weatherCode)}</span>}
-                    </div>
-                    <div className="flex-1 flex flex-col gap-0.5 mt-0.5">
-                      {goalsForDay.slice(0, 2).map(goal => (
-                        <div key={goal.id} className="h-1 rounded-full" style={{ backgroundColor: getTagColor(goal.tagId) }} />
+            {(() => {
+              const daysInMonth = getDaysInMonth(currentDate);
+              const rows = [];
+              let currentWeek = [];
+              let weekNum = null;
+
+              for (let i = 0; i < daysInMonth.length; i++) {
+                const day = daysInMonth[i];
+                if (day && weekNum === null) weekNum = getISOWeekNumber(day);
+                currentWeek.push(day);
+                
+                if (currentWeek.length === 7) {
+                  rows.push({ days: currentWeek, weekNum });
+                  currentWeek = [];
+                  weekNum = null;
+                }
+              }
+              if (currentWeek.length > 0) rows.push({ days: currentWeek, weekNum });
+
+              return rows.map((row, rowIdx) => (
+                <React.Fragment key={`week-${rowIdx}`}>
+                  <div className="min-h-16 p-1 rounded-lg border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center overflow-y-auto scrollbar-custom"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (draggedGoal?.type === 'weekly') {
+                        e.currentTarget.classList.add('border-purple-500', 'bg-purple-950/30');
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('border-purple-500', 'bg-purple-950/30');
+                    }}
+                    onDrop={(e) => {
+                      e.currentTarget.classList.remove('border-purple-500', 'bg-purple-950/30');
+                      if (draggedGoal?.type === 'weekly' && row.weekNum) {
+                        const jan1 = new Date(currentDate.getFullYear(), 0, 1);
+                        const jan1DayOfWeek = jan1.getDay();
+                        const daysToAddForWeek1 = jan1DayOfWeek === 0 ? 1 : 2 - jan1DayOfWeek;
+                        const firstMonday = new Date(currentDate.getFullYear(), 0, 1 + daysToAddForWeek1);
+                        
+                        const weekStartDate = new Date(firstMonday);
+                        weekStartDate.setDate(weekStartDate.getDate() + (row.weekNum - 1) * 7);
+                        
+                        const weekEndDate = new Date(weekStartDate);
+                        weekEndDate.setDate(weekEndDate.getDate() + 6);
+                        
+                        handleDropGoal(e, null, { 
+                          weekNumber: row.weekNum, 
+                          year: currentDate.getFullYear(),
+                          weekStart: formatDateLocal(weekStartDate),
+                          weekEnd: formatDateLocal(weekEndDate)
+                        });
+                      }
+                    }}
+                  >
+                    <div className="text-center font-semibold text-[9px] text-purple-400 mb-1">W{row.weekNum}</div>
+                    <div className="flex flex-col gap-0.5 w-full">
+                      {weeklyGoals.filter(g => g.weekNumber === row.weekNum && g.year === currentDate.getFullYear()).slice(0, 3).map(goal => (
+                        <div 
+                          key={goal.id} 
+                          draggable={!goal.completed}
+                          onDragStart={(e) => handleDragStartWeeklyGoal(e, goal)}
+                          onDragEnd={() => setDraggedGoal(null)}
+                          onTouchStart={(e) => {
+                            if (!goal.completed) {
+                              const touch = e.touches[0];
+                              let longPressTimer = setTimeout(() => {
+                                e.currentTarget.style.opacity = '0.5';
+                                setDraggedGoal(goal);
+                              }, 500);
+                              e.currentTarget.dataset.longPressTimer = longPressTimer;
+                            }
+                          }}
+                          onTouchMove={(e) => {
+                            if (draggedGoal && draggedGoal.id === goal.id) {
+                              e.preventDefault();
+                            }
+                          }}
+                          onTouchEnd={(e) => {
+                            clearTimeout(e.currentTarget.dataset.longPressTimer);
+                            e.currentTarget.style.opacity = '1';
+                            if (draggedGoal && draggedGoal.id === goal.id) {
+                              const touch = e.changedTouches[0];
+                              const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                              if (elem) {
+                                const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true });
+                                elem.dispatchEvent(dropEvent);
+                              }
+                              setDraggedGoal(null);
+                            }
+                          }}
+                          onClick={() => { setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
+                          className={`text-[8px] px-1 py-0.5 rounded truncate text-white cursor-pointer hover:opacity-80 transition-opacity ${goal.completed ? 'line-through opacity-50' : ''}`} 
+                          style={{ backgroundColor: getTagColor(goal.tagId) }} 
+                          title={goal.title}
+                        >
+                          {goal.title}
+                        </div>
                       ))}
-                      {goalsForDay.length > 2 && <div className="text-[8px] text-gray-400">+{goalsForDay.length - 2}</div>}
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                  {row.days.map((day, dayIdx) => {
+                    if (!day) return <div key={`empty-${rowIdx}-${dayIdx}`} />;
+                    
+                    const goalsForDay = getGoalsForDate(day);
+                    const dayIsToday = isToday(day);
+                    const dateStr = formatDateLocal(day);
+                    const dayForecast = forecastData[dateStr];
+                    
+                    return (
+                      <div
+                        key={`${rowIdx}-${dayIdx}`}
+                        onClick={() => setSelectedDate(day)}
+                        onDragOver={handleDragOverDay}
+                        onDrop={(e) => handleDropGoal(e, day)}
+                        className={`min-h-16 p-1 rounded-lg border cursor-pointer overflow-y-auto scrollbar-custom transition-all ${
+                          draggedGoal ? 'opacity-80' : 'opacity-100'
+                        } ${
+                          dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-0.5">
+                          <div className={`text-[10px] font-medium ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</div>
+                          {dayForecast && (
+                            <div className="flex items-center gap-0.5">
+                              <div className="text-xs">{getWeatherEmoji(dayForecast.weatherCode)}</div>
+                              <div className="text-[6px] text-gray-400 leading-none">
+                                <div>{dayForecast.maxTemp}°</div>
+                                <div>{dayForecast.minTemp}°</div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-0.5">
+                          {goalsForDay.slice(0, 3).map(goal => (
+                            <div 
+                              key={goal.id} 
+                              draggable={!goal.completed}
+                              onDragStart={(e) => handleDragStartGoal(e, goal)}
+                              onDragEnd={() => setDraggedGoal(null)}
+                              onTouchStart={(e) => {
+                                if (!goal.completed) {
+                                  const touch = e.touches[0];
+                                  let longPressTimer = setTimeout(() => {
+                                    e.currentTarget.style.opacity = '0.5';
+                                    setDraggedGoal(goal);
+                                  }, 500);
+                                  e.currentTarget.dataset.longPressTimer = longPressTimer;
+                                }
+                              }}
+                              onTouchMove={(e) => {
+                                if (draggedGoal && draggedGoal.id === goal.id) {
+                                  e.preventDefault();
+                                }
+                              }}
+                              onTouchEnd={(e) => {
+                                clearTimeout(e.currentTarget.dataset.longPressTimer);
+                                e.currentTarget.style.opacity = '1';
+                                if (draggedGoal && draggedGoal.id === goal.id) {
+                                  const touch = e.changedTouches[0];
+                                  const elem = document.elementFromPoint(touch.clientX, touch.clientY);
+                                  if (elem) {
+                                    const dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true });
+                                    elem.dispatchEvent(dropEvent);
+                                  }
+                                  setDraggedGoal(null);
+                                }
+                              }}
+                              onClick={(e) => { e.stopPropagation(); setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
+                              className={`text-[8px] px-1 py-0.5 rounded truncate cursor-pointer ${goal.completed ? 'line-through opacity-50' : 'hover:opacity-80'}`} 
+                              style={{ backgroundColor: getTagColor(goal.tagId) }} 
+                              title={goal.title}
+                            >
+                              {goal.title}
+                            </div>
+                          ))}
+                          {goalsForDay.length > 3 && <div className="text-[7px] text-gray-400 text-center">+{goalsForDay.length - 3}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ));
+            })()}
           </div>
         </div>
       </div>
