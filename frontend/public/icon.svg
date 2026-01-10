@@ -1,19 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="rgb(37 99 235)" stop-opacity="0.3"></stop>
-      <stop offset="100%" stop-color="rgb(29 78 216)" stop-opacity="0.2"></stop>
-    </linearGradient>
-  </defs>
-
-  <!-- Background -->
-  <rect x="0" y="0" width="64" height="64" rx="12" fill="url(#bg)"></rect>
-
-  <!-- Calendar icon -->
-  <g transform="translate(12,12)" stroke="rgb(96 165 250)" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="3" y="4" width="34" height="30" rx="2"></rect>
-    <line x1="3" y1="10" x2="37" y2="10"></line>
-    <line x1="12" y1="2" x2="12" y2="8"></line>
-    <line x1="28" y1="2" x2="28" y2="8"></line>
-  </g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="#4893F1"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M12 13V2l8 4-8 4" />
+  <path d="M20.561 10.222a9 9 0 1 1-12.55-5.29" />
+  <path d="M8.002 9.997a5 5 0 1 0 8.9 2.02" />
 </svg>
