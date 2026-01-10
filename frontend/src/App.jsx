@@ -1197,28 +1197,28 @@ const handleToggleHabit = async (habitId, date) => {
         />
 
         {/* Mobile Calendar */}
-        <div className="bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-4 border border-blue-500/10 select-none">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
-              {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+        <div className="bg-gradient-to-br from-gray-900/80 to-gray-900/60 rounded-xl p-2 border border-blue-500/10 select-none">
+          <div className="flex items-center justify-between mb-3 px-1">
+            <h2 className="text-base font-semibold bg-gradient-to-r from-blue-400 to-blue-500 bg-clip-text text-transparent">
+              {currentDate.toLocaleString('default', { month: 'short', year: 'numeric' })}
             </h2>
-            <div className="flex gap-2">
-              <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() - 1); setCurrentDate(d); }} className="p-2 bg-gray-800/60 rounded-lg">
-                <ChevronLeft className="w-4 h-4" />
+            <div className="flex gap-1">
+              <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() - 1); setCurrentDate(d); }} className="p-1.5 bg-gray-800/60 rounded-lg">
+                <ChevronLeft className="w-3 h-3" />
               </button>
-              <button onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }} className="px-3 py-2 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-xs font-medium">
+              <button onClick={() => { setCurrentDate(new Date()); setSelectedDate(new Date()); }} className="px-2 py-1.5 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg text-[10px] font-medium">
                 Today
               </button>
-              <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="p-2 bg-gray-800/60 rounded-lg">
-                <ChevronRight className="w-4 h-4" />
+              <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="p-1.5 bg-gray-800/60 rounded-lg">
+                <ChevronRight className="w-3 h-3" />
               </button>
             </div>
           </div>
 
-          <div className="grid gap-1.5" style={{ gridTemplateColumns: '40px repeat(7, 1fr)' }}>
-            <div className="text-center text-[9px] text-gray-500 py-1 font-semibold">Week</div>
+          <div className="grid gap-0.5" style={{ gridTemplateColumns: '28px repeat(7, 1fr)' }}>
+            <div className="text-center text-[8px] text-gray-500 py-0.5 font-semibold">W</div>
             {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
-              <div key={idx} className="text-center text-[9px] text-gray-400 py-1 font-medium">{day}</div>
+              <div key={idx} className="text-center text-[8px] text-gray-400 py-0.5 font-medium">{day}</div>
             ))}
             
             {(() => {
@@ -1242,7 +1242,7 @@ const handleToggleHabit = async (habitId, date) => {
 
               return rows.map((row, rowIdx) => (
                 <React.Fragment key={`week-${rowIdx}`}>
-                  <div className="min-h-16 p-1 rounded-lg border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center overflow-y-auto scrollbar-custom"
+                  <div className="min-h-14 p-0.5 rounded border border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40 flex flex-col items-center justify-start overflow-hidden"
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.dataTransfer.dropEffect = 'move';
@@ -1276,9 +1276,9 @@ const handleToggleHabit = async (habitId, date) => {
                       }
                     }}
                   >
-                    <div className="text-center font-semibold text-[9px] text-purple-400 mb-1">W{row.weekNum}</div>
-                    <div className="flex flex-col gap-0.5 w-full">
-                      {weeklyGoals.filter(g => g.weekNumber === row.weekNum && g.year === currentDate.getFullYear()).slice(0, 3).map(goal => (
+                    <div className="text-center font-bold text-[7px] text-purple-400">{row.weekNum}</div>
+                    <div className="flex flex-col gap-px w-full mt-0.5">
+                      {weeklyGoals.filter(g => g.weekNumber === row.weekNum && g.year === currentDate.getFullYear()).slice(0, 2).map(goal => (
                         <div 
                           key={goal.id} 
                           draggable={!goal.completed}
@@ -1286,7 +1286,6 @@ const handleToggleHabit = async (habitId, date) => {
                           onDragEnd={() => setDraggedGoal(null)}
                           onTouchStart={(e) => {
                             if (!goal.completed) {
-                              const touch = e.touches[0];
                               let longPressTimer = setTimeout(() => {
                                 e.currentTarget.style.opacity = '0.5';
                                 setDraggedGoal(goal);
@@ -1313,12 +1312,10 @@ const handleToggleHabit = async (habitId, date) => {
                             }
                           }}
                           onClick={() => { setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
-                          className={`text-[8px] px-1 py-0.5 rounded truncate text-white cursor-pointer hover:opacity-80 transition-opacity ${goal.completed ? 'line-through opacity-50' : ''}`} 
+                          className={`h-1 w-full rounded-sm ${goal.completed ? 'opacity-40' : ''}`} 
                           style={{ backgroundColor: getTagColor(goal.tagId) }} 
                           title={goal.title}
-                        >
-                          {goal.title}
-                        </div>
+                        />
                       ))}
                     </div>
                   </div>
@@ -1336,26 +1333,20 @@ const handleToggleHabit = async (habitId, date) => {
                         onClick={() => setSelectedDate(day)}
                         onDragOver={handleDragOverDay}
                         onDrop={(e) => handleDropGoal(e, day)}
-                        className={`min-h-16 p-1 rounded-lg border cursor-pointer overflow-y-auto scrollbar-custom transition-all ${
+                        className={`min-h-14 p-0.5 rounded border cursor-pointer overflow-hidden transition-all ${
                           draggedGoal ? 'opacity-80' : 'opacity-100'
                         } ${
                           dayIsToday ? 'border-blue-500 bg-gradient-to-br from-blue-950/50 to-blue-900/30' : day.toDateString() === selectedDate.toDateString() ? 'border-blue-400/60 bg-gradient-to-br from-gray-800/60 to-gray-900/60' : 'border-gray-700/50 bg-gradient-to-br from-gray-800/40 to-gray-900/40'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-0.5">
-                          <div className={`text-[10px] font-medium ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</div>
+                        <div className="flex items-start justify-between mb-px">
+                          <div className={`text-[9px] font-medium leading-none ${dayIsToday ? 'text-blue-400' : 'text-gray-300'}`}>{day.getDate()}</div>
                           {dayForecast && (
-                            <div className="flex items-center gap-0.5">
-                              <div className="text-xs">{getWeatherEmoji(dayForecast.weatherCode)}</div>
-                              <div className="text-[6px] text-gray-400 leading-none">
-                                <div>{dayForecast.maxTemp}°</div>
-                                <div>{dayForecast.minTemp}°</div>
-                              </div>
-                            </div>
+                            <div className="text-[9px] leading-none">{getWeatherEmoji(dayForecast.weatherCode)}</div>
                           )}
                         </div>
-                        <div className="space-y-0.5">
-                          {goalsForDay.slice(0, 3).map(goal => (
+                        <div className="flex flex-col gap-px">
+                          {goalsForDay.slice(0, 2).map(goal => (
                             <div 
                               key={goal.id} 
                               draggable={!goal.completed}
@@ -1363,7 +1354,6 @@ const handleToggleHabit = async (habitId, date) => {
                               onDragEnd={() => setDraggedGoal(null)}
                               onTouchStart={(e) => {
                                 if (!goal.completed) {
-                                  const touch = e.touches[0];
                                   let longPressTimer = setTimeout(() => {
                                     e.currentTarget.style.opacity = '0.5';
                                     setDraggedGoal(goal);
@@ -1390,14 +1380,12 @@ const handleToggleHabit = async (habitId, date) => {
                                 }
                               }}
                               onClick={(e) => { e.stopPropagation(); setSelectedGoalForDetails(goal); setShowGoalDetailsModal(true); }}
-                              className={`text-[8px] px-1 py-0.5 rounded truncate cursor-pointer ${goal.completed ? 'line-through opacity-50' : 'hover:opacity-80'}`} 
+                              className={`h-1 w-full rounded-sm ${goal.completed ? 'opacity-40' : ''}`} 
                               style={{ backgroundColor: getTagColor(goal.tagId) }} 
                               title={goal.title}
-                            >
-                              {goal.title}
-                            </div>
+                            />
                           ))}
-                          {goalsForDay.length > 3 && <div className="text-[7px] text-gray-400 text-center">+{goalsForDay.length - 3}</div>}
+                          {goalsForDay.length > 2 && <div className="text-[6px] text-gray-400 text-center leading-none mt-px">+{goalsForDay.length - 2}</div>}
                         </div>
                       </div>
                     );
